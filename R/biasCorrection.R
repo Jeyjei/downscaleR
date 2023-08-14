@@ -167,7 +167,7 @@
 #'  
 #'  The precipitation subroutines are switched-on when the variable name of the grid 
 #'  (i.e., the value returned by \code{gridData$Variable$varName}) is one of the following: 
-#'  \code{"pr"}, \code{"tp"} (this is the standard name defined in the vocabulary (\code{\link[cliamte4R.UDG]{C4R.vocabulary}}), \code{"precipitation"} or \code{"precip"}.
+#'  \code{"pr"}, \code{"tp"} (this is the standard name defined in the vocabulary (\code{\link[climate4R.UDG]{C4R.vocabulary}}), \code{"precipitation"} or \code{"precip"}.
 #'  Thus, caution must be taken to ensure that the correct bias correction is being undertaken when dealing with
 #'  non-standard variables.
 #'     
@@ -295,12 +295,26 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
                            parallel = FALSE,
                            max.ncores = 16,
                            ncores = NULL) {
+
+      # Check if 'gqm' method is used and raise an error suggesting the use of 'pqm' instead
       if (method == "gqm") stop("'gqm' is not a valid choice anymore. Use method = 'pqm' instead and set fitdistr.args = list(densfun = 'gamma')")
+      
+      # Match the method argument with the available choices
       method <- match.arg(method, choices = c("delta", "scaling", "eqm", "pqm", "gpqm", "mva", "loci", "ptr", "variance","dqm","qdm", "isimip3"))
+      
+      # Match the cross.val argument with the available choices
       cross.val <- match.arg(cross.val, choices = c("none", "loo", "kfold"))
+      
+      # Match the scaling.type argument with the available choices
       scaling.type <- match.arg(scaling.type, choices = c("additive", "multiplicative"))
+      
+      # Match the extrapolation argument with the available choices
       extrapolation <- match.arg(extrapolation, choices = c("none", "constant"))
+      
+      # Check if join.members argument is a logical value
       stopifnot(is.logical(join.members))
+      
+      # Check if newdata is provided, if not, set it to x
       nwdatamssg <- TRUE
       if (is.null(newdata)) {
             newdata <- x 
@@ -314,14 +328,25 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
       #       output <- do.call("isimip", list(y = y, x = x, newdata = newdata, threshold = wet.threshold, type = scaling.type))
       # } else {
       # ##################################################
+      
+      # Extract seasonal information of the target variable
       seas <- getSeason(y)
+      
+      browser()
+
+      # Fill missing values in the target and predictor variables. Necessary transformeR >= v2.1.4
       y <- fillGrid(y, lonLim = NULL, latLim = NULL)
       x <- fillGrid(x, lonLim = NULL, latLim = NULL)
       newdata <- fillGrid(newdata, lonLim = NULL, latLim = NULL)
+      
+      # Get the intersection of target and predictor grids
       yx <- intersectGrid(y, x, type = "temporal", which.return = 1:2)
       y <- yx[[1]]
       x <- yx[[2]]
+      
+      # Perform bias correction based on the cross-validation type
       if (cross.val == "none") {
+            # No cross-validation
             output <- biasCorrectionXD(y = y, x = x, newdata = newdata, 
                                        precipitation = precipitation,
                                        method = method,
@@ -340,14 +365,22 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
                                        parallel = parallel,
                                        max.ncores = max.ncores,
                                        ncores = ncores)
+
+            # Replace infinite values with NA
             output$Data[which(is.infinite(output$Data))] <- NA
+
       } else {
+            # Cross-validation
             if (nwdatamssg) {
                   message("'newdata' will be ignored for cross-validation")
             }
+
+            # Perform cross-validation based on the type
             if (cross.val == "loo") {
+                  # Leave-one-out cross-validation
                   years <- as.list(unique(getYearsAsINDEX(x)))
             } else if (cross.val == "kfold" & !is.null(folds)) {
+                  # k-fold cross-validation with user-specified folds
                   if (!is.list(folds)) {
                         avy <- unique(getYearsAsINDEX(y))
                         ind <- rep(1:folds, length(avy)/folds, length.out = length(avy))
@@ -362,6 +395,8 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
             } else if (cross.val == "kfold" & is.null(folds)) {
                   stop("Fold specification is missing, with no default")
             }
+
+            # Perform bias correction for each fold
             output.list <- lapply(1:length(years), function(i) {
                   target.year <- years[[i]]
                   rest.years <- setdiff(unlist(years), target.year)
@@ -382,6 +417,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
                   newdata2 <- subsetGrid(x, years = target.year, drop = F)
                   xx <- subsetGrid(x, years = rest.years, drop = F)
                   message("Validation ", i, ", ", length(unique(years)) - i, " remaining")
+
                   biasCorrectionXD(y = yy, x = xx, newdata = newdata2, precipitation = precipitation,
                                    method = method,
                                    window = window,
@@ -397,6 +433,8 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
                                    max.ncores = max.ncores,
                                    ncores = ncores)
             })
+
+            # Combine the outputs of each fold
             output <- redim(bindGrid(output.list, dimension = "time"), drop = TRUE)
             # al <- which(getDim(x) == "time")
             # Data <- sapply(output.list, function(n) unname(n$Data), simplify = FALSE)
@@ -408,7 +446,11 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
             # output$Dates <- x$Dates
             output$Data[which(is.infinite(output$Data))] <- NA
       }
+
+      # Subset the output based on the seasonal information of the target variable
       output <- subsetGrid(output, season = seas)
+
+      # Return the bias-corrected climate data
       return(output)
 }
 
@@ -435,6 +477,8 @@ biasCorrectionXD <- function(y, x, newdata,
                              parallel = FALSE,
                              max.ncores = 16,
                              ncores = NULL) {
+      
+      # Check if the method is "isimip3" and adjust the arguments accordingly
       if (method == "isimip3") {
             window <- NULL
             # warning("Only parameter isimip3.args is considered")
@@ -443,20 +487,38 @@ biasCorrectionXD <- function(y, x, newdata,
                                             sim_hist = x[["Dates"]][["start"]],
                                             sim_fut = newdata[["Dates"]][["start"]])
       }
+
+      # Check if the data has a station dimension
       station <- FALSE
       if ("loc" %in% getDim(y)) station <- TRUE
+
+      # Interpolate the prediction and simulation grids to the target grid
       xy <- y$xyCoords
       # suppressWarnings(suppressMessages(pred <- interpGrid(x, getGrid(y), force.non.overlapping = TRUE)))
       # suppressWarnings(suppressMessages(sim <- interpGrid(newdata, getGrid(y), force.non.overlapping = TRUE)))
+
+      browser()
+
       interpGrid.args[["new.coordinates"]] <- getGrid(y)
       interpGrid.args[["grid"]] <- x
       suppressWarnings(suppressMessages(pred <- do.call("interpGrid", interpGrid.args)))
+
+      browser()
+
       interpGrid.args[["grid"]] <- newdata
       suppressWarnings(suppressMessages(sim <- do.call("interpGrid", interpGrid.args)))
+
+      browser()
+
+      # Check if the method is "delta"
       delta.method <- method == "delta"
       precip <- precipitation
       message("[", Sys.time(), "] Argument precipitation is set as ", precip, ", please ensure that this matches your data.")
+
+      # Initialize the output bias-corrected data
       bc <- y
+
+      # Handle join.members option
       if (isTRUE(join.members) & getShape(redim(sim))["member"] > 1) {
             n.mem.aux <- getShape(sim)["member"]
             pred <- flatMemberDim(pred, station)
@@ -468,17 +530,25 @@ biasCorrectionXD <- function(y, x, newdata,
             warning("There is only one member, argument join.members ignored.")
             join.members <- FALSE
       }
+
+      # Remove unnecessary dimensions from the input grids
       y <- redim(y, drop = TRUE)
       y <- redim(y, member = FALSE, runtime = FALSE)
       pred <- redim(pred, member = TRUE, runtime = TRUE)
       sim <- redim(sim, member = TRUE, runtime = TRUE)
+
+      # Remove unnecessary dimensions from the input grids
       dimNames <- attr(y$Data, "dimensions")
       n.run <- getShape(sim)["runtime"]
       n.mem <- getShape(sim)["member"]
+
+      # Remove unnecessary dimensions from the input grids
       if (join.members & !is.null(window)) {
             message("[", Sys.time(), "] Window option is currently not supported for joined members and will be ignored")
             window <- NULL
       }
+
+      # Define the windows for bias correction
       if (!is.null(window)) {
             win <- getWindowIndex(y = y, x = pred, newdata = sim, window = window, delta.method = delta.method)
       } else {
@@ -490,8 +560,12 @@ biasCorrectionXD <- function(y, x, newdata,
             if (delta.method) win[["Window1"]][["deltaind"]] <- indobservations
       }
       message("[", Sys.time(), "] Number of windows considered: ", length(win), "...")
+
+      # Initialize the array for storing the bias-corrected data
       winarr <- array(dim = dim(sim$Data))
       if (delta.method) winarr <- array(dim = c(n.run, n.mem, getShape(y)))
+
+      # Perform bias correction for each window
       for (j in 1:length(win)) {
             yind <- win[[j]]$obsWindow
             outind <- win[[j]]$step
@@ -505,7 +579,10 @@ biasCorrectionXD <- function(y, x, newdata,
                   sw <- sim$Data[,,win[[j]]$step,,, drop = FALSE]
                   runarr <- lapply(1:n.run, function(l){
                         memarr <- lapply(1:n.mem, function(m){
-                              #join members message
+                              
+                              browser()
+
+                              # Print join members message
                               if (j == 1 & m == 1) {
                                     if (!isTRUE(join.members)) {
                                           message("[", Sys.time(), "] Bias-correcting ", n.mem, " members separately...")
@@ -513,20 +590,27 @@ biasCorrectionXD <- function(y, x, newdata,
                                           message("[", Sys.time(), "] Bias-correcting ", attr(pred, "orig.mem.shape"), " members considering their joint distribution...")
                                     }
                               }
+
+                              # Extract the data for bias correction
                               o = yw[, , , drop = FALSE]
                               p = adrop(pw[l, m, , , , drop = FALSE], drop = c(T, T, F, F, F))
                               s = adrop(sw[l, m, , , , drop = FALSE], drop = c(T, T, F, F, F))
                               data <- list(o, p, s)
+
+                              # Reshape the data if it has a station dimension
                               if (!station) {
                                     data <- lapply(1:length(data), function(x) {
                                           attr(data[[x]], "dimensions") <- dimNames
                                           abind(array3Dto2Dmat(data[[x]]), along = 3)
                                     }) 
                               }
+
+                              # Perform bias correction for the current member
                               o <- lapply(seq_len(ncol(data[[1]])), function(i) data[[1]][,i,1])
                               p <- lapply(seq_len(ncol(data[[2]])), function(i) data[[2]][,i,1])
                               s <- lapply(seq_len(ncol(data[[3]])), function(i) data[[3]][,i,1])
                               data <- NULL
+
                               mat <- biasCorrection1D(o, p, s,
                                                       method = method,
                                                       scaling.type = scaling.type,
@@ -541,12 +625,16 @@ biasCorrectionXD <- function(y, x, newdata,
                                                       parallel = parallel,
                                                       max.ncores = max.ncores,
                                                       ncores = ncores)  
+
+                              # Reshape the matrix back to the original dimensions if needed
                               if (!station) {
                                     if(is.numeric(mat)) mat <- as.matrix(mat)
                                     mat <- mat2Dto3Darray(mat, xy$x, xy$y)
                               }
                               mat
                         })
+
+                        # Combine the bias-corrected results for each member
                         unname(do.call("abind", list(memarr, along = 0)))
                   })
                   yw <- pw <- sw <- NULL
@@ -554,12 +642,19 @@ biasCorrectionXD <- function(y, x, newdata,
                   runarr <- NULL
             }
       }
+
+      # Store the bias-corrected data in the output variable
       bc$Data <- unname(do.call("abind", list(winarr, along = 3)))
       winarr <- NULL
       attr(bc$Data, "dimensions") <- attr(sim$Data, "dimensions")
+
+      # Reshape the output to the original dimensions if it had a station dimension
       if (station) bc <- redim(bc, loc = TRUE)
+
+      # Set the appropriate Dates attribute for the bias-corrected data
       bc$Dates <- sim$Dates
-      ## Recover the member dimension when join.members=TRUE:
+      
+      # Recover the member dimension when join.members=TRUE:
       if (isTRUE(join.members)) {
             if (method == "delta") {
                   bc <- recoverMemberDim(plain.grid = pred, bc.grid = bc, newdata = newdata)
@@ -570,6 +665,8 @@ biasCorrectionXD <- function(y, x, newdata,
             bc$InitializationDates <- sim$InitializationDates
             bc$Members <- sim$Members
       }
+
+      # Add "_raw" suffix to the variable name if return.raw is TRUE
       if (return.raw) {
             sim[["Variable"]][["varName"]] <- paste0(bc[["Variable"]][["varName"]], "_raw")
             bc <- makeMultiGrid(bc, sim)
@@ -577,10 +674,16 @@ biasCorrectionXD <- function(y, x, newdata,
                   bc <- redim(bc, loc = TRUE)
             }
       }
+
+      # Remove intermediate objects
       pred <- newdata <- sim <- y <- NULL
       attr(bc$Variable, "correction") <- method
+
+      # Reshape the output to drop any unused dimensions
       bc <- redim(bc, drop = TRUE)
       message("[", Sys.time(), "] Done.")
+
+      # Return the bias-corrected data
       return(bc)
 }
 
@@ -635,9 +738,17 @@ biasCorrection1D <- function(o, p, s,
                              parallel = FALSE,
                              max.ncores = 16,
                              ncores = NULL) {
+      
+      browser()
+
+      # Check parallel processing options
       parallel.pars <- parallelCheck(parallel, max.ncores, ncores)
       mapply_fun <- selectPar.pplyFun(parallel.pars, .pplyFUN = "mapply")
+      
+      # If parallel processing is enabled, stop the cluster when the function exits
       if (parallel.pars$hasparallel) on.exit(parallel::stopCluster(parallel.pars$cl))
+
+      # Perform bias correction based on the selected method
       if (method == "delta") {
             mapply_fun(delta, o, p, s)
       } else if (method == "scaling") {
@@ -667,7 +778,7 @@ biasCorrection1D <- function(o, p, s,
       } else if (method == "isimip3") {
             mapply_fun(isimip3, o, p, s, MoreArgs = isimip3.args) #this method is in a separate file
       }
-      #INCLUIR AQUI METODOS NUEVOS
+      # INCLUIR AQUI METODOS NUEVOS
 }
 
 #' @title adjustPrecipFreq
@@ -684,14 +795,18 @@ biasCorrection1D <- function(o, p, s,
 adjustPrecipFreq <- function(obs, pred, threshold){
       o <- obs[!is.na(obs)]
       p <- pred[!is.na(pred)]
+
       # Number of dry days in 'o' 
       nPo <- sum(as.double(o < threshold))
+
       # Number of dry days that must be in 'p' to equal precip frequency in 'o'
       nPp <- ceiling(length(p) * nPo / length(o))
+      
       # Index and values of ordered 'p'
       ix <- sort(p, decreasing = FALSE, index.return = TRUE)$ix
       Ps <- sort(p, decreasing = FALSE)
       Pth <- max(Ps[nPp:(nPp + 1)], na.rm = TRUE) # in case nPp == length(Ps)
+
       # Themeßl (Themessl) modification (simulating rain for model dry days) 
       inddrzl <- which(Ps[(nPp + 1):length(Ps)] < threshold)
       if (length(inddrzl) > 0) { 
@@ -705,9 +820,11 @@ adjustPrecipFreq <- function(obs, pred, threshold){
             } else {
                   Ps[(nPp + 1):(nPp + max(inddrzl))] <- mean(auxOs)
             }
+
             # order 'Ps' after simulation
             Ps <- sort(Ps, decreasing = FALSE, na.last = NA)
       }
+
       # Make 0-s
       if (nPo > 0) {
             ind <- min(nPp, length(p))
