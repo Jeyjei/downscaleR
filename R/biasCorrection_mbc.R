@@ -338,9 +338,9 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
     newdata <- x
     nwdatamssg <- FALSE
   }
-
+  
   if (method == "mbcr" | method == "mbcn") {
-    message("Multivariable bias correction method selected")
+    message("Multivariable bias correction method selected\n")
 
     y <- setNames(y, lapply(unname(y), function(k) k$Variable$varName))
     x <- setNames(x, lapply(unname(x), function(k) k$Variable$varName))
@@ -382,8 +382,6 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
     newdata <- setNames(newdata, lapply(unname(newdata), function(k) k$Variable$varName))
   }
 
-  browser()
-
   # ####temporal solution for applying the isimip method###########
   # if (method == "isimip") {
   #       warning("cross-validation, window and joining member options are not implemented for the isimip method yet.")
@@ -395,23 +393,17 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
 
   # Extract seasonal information of the target variable
   seas <- lapply(y, function(k) getSeason(k)) # getSeason(y[[1]])
-  # seas <- getSeason(y)
 
   # Fill missing values in the target and predictor variables. Necessary transformeR >= v2.1.4
   y <- lapply(y, function(k) fillGrid(grid = k, lonLim = NULL, latLim = NULL))
   x <- lapply(x, function(k) fillGrid(grid = k, lonLim = NULL, latLim = NULL))
   newdata <- lapply(newdata, function(k) fillGrid(grid = k, lonLim = NULL, latLim = NULL))
-  # y <- fillGrid(grid = y, lonLim = NULL, latLim = NULL)
-  # x <- fillGrid(grid = x, lonLim = NULL, latLim = NULL)
-  # newdata <- fillGrid(newdata, lonLim = NULL, latLim = NULL)
 
   # Get the intersection of target and predictor grids
   yx <- mapply(function(y_f, x_f) intersectGrid(y_f, x_f, type = "temporal", which.return = 1:2), y, x, SIMPLIFY = FALSE, USE.NAMES = TRUE)
   y <- lapply(yx, function(k) k[[1]])
   x <- lapply(yx, function(k) k[[2]])
-  # yx <- intersectGrid(y, x, type = "temporal", which.return = 1:2)
-  # y <- yx[[1]]
-  # x <- yx[[2]]
+
 
   browser()
 
@@ -573,50 +565,51 @@ biasCorrectionXD <- function(y, x, newdata,
   # Check if the data has a station dimension
   station <- FALSE
   if (length(y) == sum(unname(unlist(lapply(y, function(k) "loc" %in% getDim(k)))))) station <- TRUE
-  # if ("loc" %in% getDim(y)) station <- TRUE
 
   # Interpolate the prediction and simulation grids to the target grid
   xy <- lapply(y, function(k) k$xyCoords)
-  # suppressWarnings(suppressMessages(pred <- interpGrid(x, getGrid(y), force.non.overlapping = TRUE)))
-  # suppressWarnings(suppressMessages(sim <- interpGrid(newdata, getGrid(y), force.non.overlapping = TRUE)))
-
-  browser()
-
+  
   # It checks if the data have the same grid, if they don't have the same grid, the data is interpolated.
-  status_interpol_x <- mapply(function(g1, g2) identical(getGrid(g1), getGrid(g2)), y, x, SIMPLIFY = FALSE, USE.NAMES = TRUE)
+  status_interpol_x <- mapply(function(grid_y, grid_x) {
+    grid_y_info <- getGrid(grid_y)
+    grid_x_info <- getGrid(grid_x)
+    
+    identical(grid_y_info$x, grid_x_info$x) &&
+      identical(grid_y_info$y, grid_x_info$y) &&
+      identical(attr(grid_y_info, "resX"), attr(grid_x_info, "resX")) &&
+      identical(attr(grid_y_info, "resY"), attr(grid_x_info, "resY"))
+  }, y, x, SIMPLIFY = FALSE, USE.NAMES = TRUE)
+  
   pred <- mapply(function(status, y_f, x_f) {
     if (status) {
-      message("\n[", Sys.time(), "] It was not necessary to interpolate the variable '", x_f$Variable$varName, "' of training period:")
+      message("[", Sys.time(), "] It was not necessary to interpolate the variable '", x_f$Variable$varName, "' of training period.")
       x_f
     } else {
-      message("\n[", Sys.time(), "] Variable '", x_f$Variable$varName, "' of training period:")
+      message("[", Sys.time(), "] Variable '", x_f$Variable$varName, "' of training period:")
       interpGrid(grid = x_f, new.coordinates = getGrid(y_f))
     }
   }, status_interpol_x, y, x, SIMPLIFY = FALSE, USE.NAMES = TRUE)
 
-  # interpGrid.args[["new.coordinates"]] <- getGrid(y)
-  # interpGrid.args[["grid"]] <- x
-  # # suppressWarnings(suppressMessages(pred <- do.call("interpGrid", interpGrid.args)))
-  # pred <- do.call("interpGrid", interpGrid.args)
-
-  browser()
-
-  status_interpol_nx <- mapply(function(g1, g2) identical(getGrid(g1), getGrid(g2)), y, newdata, SIMPLIFY = FALSE, USE.NAMES = TRUE)
+  status_interpol_nx <-mapply(function(grid_y, grid_nx) {
+    grid_y_info <- getGrid(grid_y)
+    grid_nx_info <- getGrid(grid_nx)
+    
+    identical(grid_y_info$x, grid_nx_info$x) &&
+      identical(grid_y_info$y, grid_nx_info$y) &&
+      identical(attr(grid_y_info, "resX"), attr(grid_nx_info, "resX")) &&
+      identical(attr(grid_y_info, "resY"), attr(grid_nx_info, "resY"))
+  }, y, newdata, SIMPLIFY = FALSE, USE.NAMES = TRUE)
+  
   sim <- mapply(function(status, y_f, x_f) {
     if (status) {
-      message("\n[", Sys.time(), "] It was not necessary to interpolate the variable '", x_f$Variable$varName, "' of test period:")
+      message("[", Sys.time(), "] It was not necessary to interpolate the variable '", x_f$Variable$varName, "' of test period.")
       x_f
     } else {
-      message("\n[", Sys.time(), "] Variable '", x_f$Variable$varName, "' of test period:")
+      message("[", Sys.time(), "] Variable '", x_f$Variable$varName, "' of test period:")
       interpGrid(grid = x_f, new.coordinates = getGrid(y_f))
     }
   }, status_interpol_nx, y, newdata, SIMPLIFY = FALSE, USE.NAMES = TRUE)
-  # interpGrid.args[["grid"]] <- newdata
-  # # suppressWarnings(suppressMessages(sim <- do.call("interpGrid", interpGrid.args)))
-  # suppressWarnings(sim <- do.call("interpGrid", interpGrid.args))
-
-  browser()
-
+  
 
   # Check if the method is "delta"
   delta.method <- method == "delta"
@@ -665,7 +658,6 @@ biasCorrectionXD <- function(y, x, newdata,
 
   # Define the windows for bias correction
   if (!is.null(window)) {
-    browser()
     win_list <- mapply(function(y_f, pred_f, sim_f) getWindowIndex(y = y_f, x = pred_f, newdata = sim_f, window = window, delta.method = delta.method), y, pred, sim, SIMPLIFY = FALSE, USE.NAMES = TRUE)
     win <- win_list[[1]]
   } else {
@@ -698,7 +690,6 @@ biasCorrectionXD <- function(y, x, newdata,
       sw <- lapply(sim, function(k) k$Data[, , win[[j]]$step, , , drop = FALSE])
       runarr <- lapply(1:n.run, function(l) {
         memarr <- lapply(1:n.mem, function(m) {
-          browser()
 
           # Print join members message
           if (j == 1 & m == 1) {
@@ -714,7 +705,6 @@ biasCorrectionXD <- function(y, x, newdata,
           p <- lapply(pw, function(k) adrop(k[l, m, , , , drop = FALSE], drop = c(T, T, F, F, F)))
           s <- lapply(sw, function(k) adrop(k[l, m, , , , drop = FALSE], drop = c(T, T, F, F, F)))
 
-          browser()
           data <- list(o, p, s)
 
           # Reshape the data if it has a station dimension
@@ -738,12 +728,12 @@ biasCorrectionXD <- function(y, x, newdata,
           o <- lapply(data[[1]], function(k) lapply(seq_len(ncol(k)), function(i) k[, i, 1]))
           p <- lapply(data[[2]], function(k) lapply(seq_len(ncol(k)), function(i) k[, i, 1]))
           s <- lapply(data[[3]], function(k) lapply(seq_len(ncol(k)), function(i) k[, i, 1]))
-          # o <- lapply(seq_len(ncol(data[[1]])), function(i) data[[1]][, i, 1])
-          # p <- lapply(seq_len(ncol(data[[2]])), function(i) data[[2]][, i, 1])
-          # s <- lapply(seq_len(ncol(data[[3]])), function(i) data[[3]][, i, 1])
-
+      
           data <- NULL
-
+          
+          # Obtain the names of variables
+          name_var <- names(o)
+          
           # Apply bias correction
           mat <- biasCorrection1D(o, p, s,
             method = method,
@@ -894,10 +884,16 @@ biasCorrection1D <- function(o, p, s,
     ###########################################
     # Multivariate methods of bias correction #
     ###########################################
-    message("[", Sys.time(), "] Multivariable bias correction method used:", method)
-
-    browser()
-
+    message("\n[", Sys.time(), "] Multivariable bias correction method used:", method)
+    
+    # Check if precipitation/pr is a variable and the option is TRUE
+    if ((!precip) & ("pr" %in% names(o))) {
+      message("[", Sys.time(), "] Argument 'precipitation' is set as ", precip, " and 'pr' is among the variables.")
+    }
+    if ((precip) & !("pr" %in% names(o))) {
+      message("[", Sys.time(), "] Argument 'precipitation' is set as ", precip, " and 'pr' is not among the variables.")
+    }
+    
     # Restructure the lists to adapt them to the input of the MBC library functions
     # All lists of o, p and s have the same dimension (time dimension)
     o <- lapply(1:length(o[[1]]), function(i) sapply(o, "[[", i))
@@ -905,52 +901,66 @@ biasCorrection1D <- function(o, p, s,
     s <- lapply(1:length(s[[1]]), function(i) sapply(s, "[[", i))
 
     # Bias correction methods
-    mapply_fun(mbc_methods, o, p, s, MoreArgs = list(method, precip, pr.threshold, mbc.args))
+    mbc_out <- mapply_fun(mbc_methods, o, p, s, MoreArgs = list(method, precip, pr.threshold, mbc.args))
+    yout <- list()
+    
+    # Group the lists in matrix
+    for (i.name in attributes(mbc_out)$dimnames[[1]]) {
+      yout[[i.name]] <- do.call(cbind, unlist(mbc_out[i.name, ], recursive = FALSE))
+      }
+    
   }
   else {
 
     #########################################
     # Univariate methods of bias correction #
     #########################################
-    message("[", Sys.time(), "] Univariate bias correction method used: ", method)
-
-    name_var <- names(o)
+    message("\n[", Sys.time(), "] Univariate bias correction method used: ", method)
+    
+    name.var <- names(o)
     o <- o[[1]]
     p <- p[[1]]
     s <- s[[1]]
 
     # Bias correction methods
     if (method == "delta") {
-      mapply_fun(delta, o, p, s)
+      out <- mapply_fun(delta, o, p, s)
     } else if (method == "scaling") {
-      mapply_fun(scaling, o, p, s, MoreArgs = list(scaling.type = scaling.type))
+      out <- mapply_fun(scaling, o, p, s, MoreArgs = list(scaling.type = scaling.type))
     } else if (method == "eqm") {
-      suppressWarnings(
+      out <- suppressWarnings(
         mapply_fun(eqm, o, p, s, MoreArgs = list(precip, pr.threshold, n.quantiles, extrapolation))
       )
     } else if (method == "pqm") {
-      suppressWarnings(
+      out <- suppressWarnings(
         mapply_fun(pqm, o, p, s, MoreArgs = list(fitdistr.args, precip, pr.threshold))
       )
     } else if (method == "gpqm") {
-      mapply_fun(gpqm, o, p, s, MoreArgs = list(precip, pr.threshold, theta))
+      out <- mapply_fun(gpqm, o, p, s, MoreArgs = list(precip, pr.threshold, theta))
     } else if (method == "mva") {
-      mapply_fun(mva, o, p, s)
+      out <- mapply_fun(mva, o, p, s)
     } else if (method == "variance") {
-      mapply_fun(variance, o, p, s, MoreArgs = list(precip))
+      out <- mapply_fun(variance, o, p, s, MoreArgs = list(precip))
     } else if (method == "loci") {
-      mapply_fun(loci, o, p, s, MoreArgs = list(precip, pr.threshold))
+      out <- mapply_fun(loci, o, p, s, MoreArgs = list(precip, pr.threshold))
     } else if (method == "ptr") {
-      mapply_fun(ptr, o, p, s, MoreArgs = list(precip))
+      out <- mapply_fun(ptr, o, p, s, MoreArgs = list(precip))
     } else if (method == "dqm") {
-      mapply_fun(dqm, o, p, s, MoreArgs = list(precip, pr.threshold, n.quantiles, detrend))
+      out <- mapply_fun(dqm, o, p, s, MoreArgs = list(precip, pr.threshold, n.quantiles, detrend))
     } else if (method == "qdm") {
-      mapply_fun(qdm, o, p, s, MoreArgs = list(precip, pr.threshold, n.quantiles))
+      out <- mapply_fun(qdm, o, p, s, MoreArgs = list(precip, pr.threshold, n.quantiles))
     } else if (method == "isimip3") {
-      mapply_fun(isimip3, o, p, s, MoreArgs = isimip3.args) # this method is in a separate file
+      out <- mapply_fun(isimip3, o, p, s, MoreArgs = isimip3.args) # this method is in a separate file
     }
     # INCLUIR AQUI METODOS UNIVARIABLES NUEVOS
+    
+    
+    # Transform back to list and add variable name
+    yout <- list()
+    yout[[name.var]] <- out
   }
+  
+  return(yout)
 }
 
 #' @title adjustPrecipFreq
@@ -1160,7 +1170,6 @@ pqm <- function(o, p, s, fitdistr.args, precip, pr.threshold) {
 #' @author S. Herrera and M. Iturbide
 
 eqm <- function(o, p, s, precip, pr.threshold, n.quantiles, extrapolation) {
-  browser()
 
   if (precip == TRUE) {
     threshold <- pr.threshold
@@ -1726,12 +1735,22 @@ qdm <- function(o, p, s, precip, pr.threshold, n.quantiles, jitter.factor = 0.01
 
 mbc_methods <- function(o, p, s, method, precip, pr.threshold, mbc.args) {
   if (all(is.na(o)) | all(is.na(p)) | all(is.na(s))) {
-    return(yout = rep(NA, length(s)))
+
+    # Reshape the result
+    yout <- list()
+    names.var <- suppressWarnings(colnames(o))
+    names.mbc <- c("mhat.c", "mhat.p")
+    for (name.v in names.var){
+      for (name.mbc in names.mbc) {
+        yout[[paste0(name.v, "_", name.mbc)]] <- list(matrix(NA, nrow = nrow(o), ncol = 1))
+      }
+    }
   }
   else {
 
     # For ratio data, treat exact zeros as left censored values less than pr.threshold
     if ((precip) & ("pr" %in% colnames(o))) {
+      message("[", Sys.time(), "] Apply threshold to precipitation")
       epsilon <- .Machine$double.eps
       o[, "pr"][o[, "pr"] < pr.threshold & !is.na(o[, "pr"])] <- runif(sum(o[, "pr"] < pr.threshold & !is.na(o[, "pr"])), min = epsilon, max = pr.threshold)
       p[, "pr"][p[, "pr"] < pr.threshold & !is.na(p[, "pr"])] <- runif(sum(p[, "pr"] < pr.threshold & !is.na(p[, "pr"])), min = epsilon, max = pr.threshold)
@@ -1740,24 +1759,29 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, mbc.args) {
       o[o < pr.threshold & !is.na(o)] <- runif(sum(o < pr.threshold, na.rm = TRUE), min = epsilon, max = pr.threshold)
       p[p < pr.threshold & !is.na(p)] <- runif(sum(p < pr.threshold, na.rm = TRUE), min = epsilon, max = pr.threshold)
       s[s < pr.threshold & !is.na(s)] <- runif(sum(s < pr.threshold, na.rm = TRUE), min = epsilon, max = pr.threshold)
-    } else {
-      if ((!precip) & ("pr" %in% colnames(o))) {
-        message("[", Sys.time(), "] Argument precipitation is set as ", precip, " and 'pr' is among the variables.")
-      }
-      if ((precip) & !("pr" %in% colnames(o))) {
-        message("[", Sys.time(), "] Argument precipitation is set as ", precip, " and 'pr' is not among the variables.")
-      }
-    }
-
+    } 
+    
+    
     # Apply the multivariabe bias correction method
     if (method == "mbcr") {
-      yout <- do.call(mbc_r, list(o = o, p = p, s = s, mbc.args = mbc.args))
+      mbc_out <- do.call(mbc_r, list(o = o, p = p, s = s, mbc.args = mbc.args))
     } else if (method == "mbcn") {
-      yout <- do.call(mbc_n, list(o = o, p = p, s = s, mbc.args = mbc.args))
+      mbc_out <- do.call(mbc_n, list(o = o, p = p, s = s, mbc.args = mbc.args))
     }
-
-    return(yout)
+    
+    # Reshape the result
+    yout <- list()
+    names.var <- suppressWarnings(colnames(o))
+    names.mbc <- suppressWarnings(names(mbc_out))
+    for (name.v in names.var){
+      for (name.mbc in names.mbc) {
+        aux <- mbc_out[[name.mbc]][, name.v, drop = FALSE]
+        dimnames(aux) <- NULL # Remove attributes
+        yout[[paste0(name.v, "_", name.mbc)]] <- list(aux)
+      }
+    }
   }
+  return(yout)
 }
 
 #' @title Spearman rank correlation method for Multivariate bias correction
@@ -1771,10 +1795,10 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, mbc.args) {
 #' @author JJ. Velasco
 
 mbc_r <- function(o, p, s, mbc.args) {
-  browser()
-
+  
   # List join
-  arg.list <- append(o.c = o, m.c = pred, m.p = s, mbc.args)
+  arg.list <- list(o.c = o, m.c = p, m.p = s)
+  arg.list <- append(arg.list, mbc.args)
   
   # Call MBCr function of MBC library
   yout <- do.call(MBCr, arg.list)

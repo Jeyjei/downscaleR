@@ -497,13 +497,9 @@ biasCorrectionXD <- function(y, x, newdata,
       # suppressWarnings(suppressMessages(pred <- interpGrid(x, getGrid(y), force.non.overlapping = TRUE)))
       # suppressWarnings(suppressMessages(sim <- interpGrid(newdata, getGrid(y), force.non.overlapping = TRUE)))
 
-      browser()
-
       interpGrid.args[["new.coordinates"]] <- getGrid(y)
       interpGrid.args[["grid"]] <- x
       suppressWarnings(suppressMessages(pred <- do.call("interpGrid", interpGrid.args)))
-
-      browser()
 
       interpGrid.args[["grid"]] <- newdata
       suppressWarnings(suppressMessages(sim <- do.call("interpGrid", interpGrid.args)))
@@ -625,6 +621,7 @@ biasCorrectionXD <- function(y, x, newdata,
                                                       parallel = parallel,
                                                       max.ncores = max.ncores,
                                                       ncores = ncores)  
+                              browser()
 
                               # Reshape the matrix back to the original dimensions if needed
                               if (!station) {
