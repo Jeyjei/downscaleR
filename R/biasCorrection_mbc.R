@@ -339,18 +339,32 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
     nwdatamssg <- FALSE
   }
   
+  isMBC <- FALSE
   if (method == "mbcr" | method == "mbcn") {
-    message("Multivariable bias correction method selected\n")
-
+    message("[", Sys.time(), "] Multivariable bias correction method selected\n")
+    isMBC <- TRUE
+    
     y <- setNames(y, lapply(unname(y), function(k) k$Variable$varName))
     x <- setNames(x, lapply(unname(x), function(k) k$Variable$varName))
     newdata <- setNames(newdata, lapply(unname(newdata), function(k) k$Variable$varName))
 
+    # Check the names of the variables, that they are the same
+    status_names <- identical(names(y), names(x)) && identical(names(y), names(newdata))
+    if (!status_names) {
+      message("[", Sys.time(), "] The grid 'y' contains:", paste(names(y), collapse = ", "))
+      message("[", Sys.time(), "] The grid 'x' contains:", paste(names(x), collapse = ", "))
+      message("[", Sys.time(), "] The grid 'newdata' contains:", paste(names(newdata), collapse = ", "))
+      message("[", Sys.time(), "] Run the 'bias Correction' function again, making sure that the set of variables in each grid is the same and uniqueness in the names is maintained.")
+      return(NA)
+    }
+
+    # Check the dimensions of the variables of the same period
     status_dimension_y <- lapply(y, function(k) identical(getGrid(k), getGrid(y[[1]])))
     for (status_var_i in status_dimension_y) {
       if (!status_var_i) {
         message("[", Sys.time(), "] Observed variables (", paste(names(y), collapse = ", "), ") do not have the same dimensions")
-        message("[", Sys.time(), "] Run the 'bias Correction' function again, making sure that the dimensions of the variables to be corrected together are the same")
+        message("[", Sys.time(), "] Run the 'bias Correction' function again, making sure that the dimensions of the variables to be corrected together are the same.")
+        return(NA)
       }
     }
 
@@ -358,7 +372,8 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
     for (status_var_i in status_dimension_x) {
       if (!status_var_i) {
         message("[", Sys.time(), "] The variables of model for the training period (", paste(names(x), collapse = ", "), ") do not have the same dimensions")
-        message("[", Sys.time(), "] Run the 'bias Correction' function again, making sure that the dimensions of the variables to be corrected together are the same")
+        message("[", Sys.time(), "] Run the 'bias Correction' function again, making sure that the dimensions of the variables to be corrected together are the same.")
+        return(NA)
       }
     }
 
@@ -366,13 +381,12 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
     for (status_var_i in status_dimension_nx) {
       if (!status_var_i) {
         message("[", Sys.time(), "] The variables of model for the test period (", paste(names(x), collapse = ", "), ") do not have the same dimensions")
-        message("[", Sys.time(), "] Run the 'bias Correction' function again, making sure that the dimensions of the variables to be corrected together are the same")
+        message("[", Sys.time(), "] Run the 'bias Correction' function again, making sure that the dimensions of the variables to be corrected together are the same.")
+        return(NA)
       }
     }
-
-    # Comprobar los nombres de las variables, que sean los mismos
   } else {
-    message("Univariate bias correction method selected")
+    message("[", Sys.time(), "] Univariate bias correction method selected")
 
     y <- list(y = y)
     y <- setNames(y, lapply(unname(y), function(k) k$Variable$varName))
@@ -390,6 +404,23 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
   #       output <- do.call("isimip", list(y = y, x = x, newdata = newdata, threshold = wet.threshold, type = scaling.type))
   # } else {
   # ##################################################
+
+  # Check the units of a variable is the same in all periods
+  status_unit <- mapply(function(y_f, x_f, newx_f) {
+    unit_y <- getGridUnits(y_f)
+    unit_x <- getGridUnits(x_f)
+    unit_newdata <- getGridUnits(newx_f)
+
+    return(all(unit_y == unit_x, unit_y == unit_newdata))
+  }, y, x, newdata, SIMPLIFY = FALSE, USE.NAMES = TRUE)
+
+  for (var_i in names(y)) {
+    if (!status_unit[[var_i]]) {
+      message("[", Sys.time(), "] The variables of model", var_i, ") do not have the same units")
+      message("[", Sys.time(), "] Run the 'bias Correction' function again, making sure that the units of the same variable is the same")
+      return(NA)
+    }
+  }
 
   # Extract seasonal information of the target variable
   seas <- lapply(y, function(k) getSeason(k)) # getSeason(y[[1]])
@@ -433,7 +464,11 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
     )
 
     # Replace infinite values with NA
-    output$Data[which(is.infinite(output$Data))] <- NA
+    output <- lapply(output, function(output.i) {
+      output.i$Data[which(is.infinite(output.i$Data))] <- NA
+      return(output.i)
+    })
+
   }
   else {
     # Cross-validation
@@ -517,9 +552,25 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
     output$Data[which(is.infinite(output$Data))] <- NA
   }
 
-  # Subset the output based on the seasonal information of the target variable
-  output <- subsetGrid(output, season = seas)
+  browser()
 
+  # Subset the output based on the seasonal information of the target variable
+  for (var.i in names(output)) {
+    name.var <- strsplit(var.i, "_")[[1]][1]
+    output[[var.i]] <- subsetGrid(output[[var.i]], season = seas[[name.var]])
+  }
+  
+  # Returns a "grid" (usual output) if a univariate bias correction method has been used
+  if (names(output) == 1) {
+    output <- output[[1]]
+  }
+  
+  # Notify the user of the exit of the function
+  if (isMBC) {
+    message("You have used a multivariable bias correction method.")
+    message("The output of the function is the corrected variables, \nboth of the calibration period and the projection period.")
+  }
+  
   # Return the bias-corrected climate data
   return(output)
 }
@@ -568,18 +619,18 @@ biasCorrectionXD <- function(y, x, newdata,
 
   # Interpolate the prediction and simulation grids to the target grid
   xy <- lapply(y, function(k) k$xyCoords)
-  
+
   # It checks if the data have the same grid, if they don't have the same grid, the data is interpolated.
   status_interpol_x <- mapply(function(grid_y, grid_x) {
     grid_y_info <- getGrid(grid_y)
     grid_x_info <- getGrid(grid_x)
-    
+
     identical(grid_y_info$x, grid_x_info$x) &&
       identical(grid_y_info$y, grid_x_info$y) &&
       identical(attr(grid_y_info, "resX"), attr(grid_x_info, "resX")) &&
       identical(attr(grid_y_info, "resY"), attr(grid_x_info, "resY"))
   }, y, x, SIMPLIFY = FALSE, USE.NAMES = TRUE)
-  
+
   pred <- mapply(function(status, y_f, x_f) {
     if (status) {
       message("[", Sys.time(), "] It was not necessary to interpolate the variable '", x_f$Variable$varName, "' of training period.")
@@ -590,16 +641,16 @@ biasCorrectionXD <- function(y, x, newdata,
     }
   }, status_interpol_x, y, x, SIMPLIFY = FALSE, USE.NAMES = TRUE)
 
-  status_interpol_nx <-mapply(function(grid_y, grid_nx) {
+  status_interpol_nx <- mapply(function(grid_y, grid_nx) {
     grid_y_info <- getGrid(grid_y)
     grid_nx_info <- getGrid(grid_nx)
-    
+
     identical(grid_y_info$x, grid_nx_info$x) &&
       identical(grid_y_info$y, grid_nx_info$y) &&
       identical(attr(grid_y_info, "resX"), attr(grid_nx_info, "resX")) &&
       identical(attr(grid_y_info, "resY"), attr(grid_nx_info, "resY"))
   }, y, newdata, SIMPLIFY = FALSE, USE.NAMES = TRUE)
-  
+
   sim <- mapply(function(status, y_f, x_f) {
     if (status) {
       message("[", Sys.time(), "] It was not necessary to interpolate the variable '", x_f$Variable$varName, "' of test period.")
@@ -609,7 +660,7 @@ biasCorrectionXD <- function(y, x, newdata,
       interpGrid(grid = x_f, new.coordinates = getGrid(y_f))
     }
   }, status_interpol_nx, y, newdata, SIMPLIFY = FALSE, USE.NAMES = TRUE)
-  
+
 
   # Check if the method is "delta"
   delta.method <- method == "delta"
@@ -619,7 +670,11 @@ biasCorrectionXD <- function(y, x, newdata,
   message("[", Sys.time(), "] Argument precipitation is set as ", precip, ", please ensure that this matches your data.")
 
   # Initialize the output bias-corrected data
-  bc <- y
+  if (length(y) == 1) {
+    bc <- rep(y, times = 1)
+  } else {
+    bc <- rep(y, times = 2)
+  }
 
   # Handle join.members option
 
@@ -675,6 +730,12 @@ biasCorrectionXD <- function(y, x, newdata,
   # Initialize the array for storing the bias-corrected data
   winarr <- array(dim = dim(sim[[1]]$Data))
   if (delta.method) winarr <- array(dim = c(n.run, n.mem, getShape(y)))
+  if (length(y) == 1) {
+    winarr.list <- rep(list(winarr), times = 1)
+  } else {
+    winarr.list <- rep(list(winarr), times = 2 * length(y))
+  }
+
 
   # Perform bias correction for each window
   for (j in 1:length(win)) {
@@ -688,6 +749,7 @@ biasCorrectionXD <- function(y, x, newdata,
       yw <- lapply(y, function(k) k$Data[yind, , , drop = FALSE])
       pw <- lapply(pred, function(k) k$Data[, , win[[j]]$window, , , drop = FALSE])
       sw <- lapply(sim, function(k) k$Data[, , win[[j]]$step, , , drop = FALSE])
+
       runarr <- lapply(1:n.run, function(l) {
         memarr <- lapply(1:n.mem, function(m) {
 
@@ -728,12 +790,12 @@ biasCorrectionXD <- function(y, x, newdata,
           o <- lapply(data[[1]], function(k) lapply(seq_len(ncol(k)), function(i) k[, i, 1]))
           p <- lapply(data[[2]], function(k) lapply(seq_len(ncol(k)), function(i) k[, i, 1]))
           s <- lapply(data[[3]], function(k) lapply(seq_len(ncol(k)), function(i) k[, i, 1]))
-      
+
           data <- NULL
-          
+
           # Obtain the names of variables
           name_var <- names(o)
-          
+
           # Apply bias correction
           mat <- biasCorrection1D(o, p, s,
             method = method,
@@ -752,66 +814,117 @@ biasCorrectionXD <- function(y, x, newdata,
             ncores = ncores
           )
 
-          browser()
-
           # Reshape the matrix back to the original dimensions if needed
           if (!station) {
-            if (class(mat) == "numeric") mat <- as.matrix(mat)
-            mat <- mat2Dto3Darray(mat, xy$x, xy$y)
+            mat <- setNames(lapply(names(mat), function(var.i) {
+              # Transform to matrix if needed
+              if (class(mat[[var.i]]) == "numeric") {
+                mat[[var.i]] <- as.matrix(mat[[var.i]])
+              }
+              # Reshape the matrix back to the original dimensions
+              # The name of the lists "mat" contains the name of the variables
+              name.var <- strsplit(var.i, "_")[[1]][1]
+              mat[[var.i]] <- mat2Dto3Darray(mat[[var.i]], xy[[name.var]]$x, xy[[name.var]]$y)
+            }), names(mat))
           }
-          mat
+
+          return(mat)
         })
 
         # Combine the bias-corrected results for each member
-        unname(do.call("abind", list(memarr, along = 0)))
+        return(lapply(memarr[[1]], function(memarr.i) {
+          unname(do.call("abind", list(memarr.i, along = 0)))
+        }))
       })
+
+      # Remove intermediate objects
       yw <- pw <- sw <- NULL
-      winarr[, , outind, , ] <- unname(do.call("abind", list(runarr, along = 0)))
+      rm(yw, pw, sw)
+      gc()
+
+      # Add names to the winarr.list
+      if (is.null(names(winarr.list))) {
+        names(winarr.list) <- names(runarr[[1]])
+      }
+
+      # Fill winarr variable for each list
+      for (name.runarr in names(runarr[[1]])) {
+        winarr.list[[name.runarr]][, , outind, , ] <- unname(do.call("abind", list(runarr[[1]][[name.runarr]], along = 0)))
+      }
+
+      # Remove intermediate objects
       runarr <- NULL
+      rm(runarr)
+      gc()
     }
   }
 
-  # Store the bias-corrected data in the output variable
-  bc$Data <- unname(do.call("abind", list(winarr, along = 3)))
+  # Obtain names of bc variable
+  names.bc <- names(bc)
+
+  # Store the bias-corrected data in the output variable for each list
+  for (var.i in names(winarr.list)) {
+    name.var <- strsplit(var.i, "_")[[1]][1]
+    pos.name <- which(names.bc == name.var)[1]
+    names.bc[pos.name] <- var.i
+    names(bc)[pos.name] <- var.i
+    bc[[var.i]][["Data"]] <- unname(do.call("abind", list(winarr.list[[var.i]], along = 3)))
+    attr(bc[[var.i]][["Data"]], "dimensions") <- attr(sim[[name.var]][["Data"]], "dimensions")
+  }
+
+  # Remove intermediate objects
   winarr <- NULL
-  attr(bc$Data, "dimensions") <- attr(sim$Data, "dimensions")
+  winarr.list <- NULL
+  rm(winarr, winarr.list)
+  gc()
 
   # Reshape the output to the original dimensions if it had a station dimension
-  if (station) bc <- redim(bc, loc = TRUE)
-
-  # Set the appropriate Dates attribute for the bias-corrected data
-  bc$Dates <- sim$Dates
-
-  # Recover the member dimension when join.members=TRUE:
-  if (isTRUE(join.members)) {
-    if (method == "delta") {
-      bc <- recoverMemberDim(plain.grid = pred, bc.grid = bc, newdata = newdata)
-    } else {
-      bc <- recoverMemberDim(plain.grid = sim, bc.grid = bc, newdata = newdata)
-    }
-  } else {
-    bc$InitializationDates <- sim$InitializationDates
-    bc$Members <- sim$Members
+  if (station) {
+    bc <- lapply(bc, function(bc.i) redim(bc.i, loc = TRUE))
   }
 
-  # Add "_raw" suffix to the variable name if return.raw is TRUE
-  if (return.raw) {
-    sim[["Variable"]][["varName"]] <- paste0(bc[["Variable"]][["varName"]], "_raw")
-    bc <- makeMultiGrid(bc, sim)
-    if (station) {
-      bc <- redim(bc, loc = TRUE)
+  # Set the appropriate Dates attribute for the bias-corrected data
+  for (var.i in names(bc)) {
+    name.var <- strsplit(var.i, "_")[[1]][1]
+    bc[[var.i]][["Dates"]] <- sim[[name.var]][["Dates"]]
+
+    # Recover the member dimension when join.members=TRUE:
+    if (isTRUE(join.members)) {
+      if (method == "delta") {
+        bc[[var.i]] <- recoverMemberDim(plain.grid = pred[[name.var]], bc.grid = bc[[var.i]], newdata = newdata[[name.var]])
+      } else {
+        bc[[var.i]] <- recoverMemberDim(plain.grid = sim[[name.var]], bc.grid = bc[[var.i]], newdata = newdata[[name.var]])
+      }
+    } else {
+      bc[[var.i]]$InitializationDates <- sim[[name.var]]$InitializationDates
+      bc[[var.i]]$Members <- sim[[name.var]]$Members
     }
+
+    # Add "_raw" suffix to the variable name if return.raw is TRUE
+    if (return.raw) {
+      sim[[name.var]][["Variable"]][["varName"]] <- paste0(bc[[var.i]][["Variable"]][["varName"]], "_raw")
+      bc[[var.i]] <- makeMultiGrid(bc[[var.i]], sim[[name.var]])
+      if (station) {
+        bc[[var.i]] <- redim(bc[[var.i]], loc = TRUE)
+      }
+    }
+
+    # Add attribute about method of bias correction
+    browser()
+    attr(bc[[var.i]]$Variable, "correction") <- method
+    attr(bc[[var.i]]$Variable, "metadata_correction") <- paste0("using ", paste(names(sim), collapse = ", "))
   }
 
   # Remove intermediate objects
   pred <- newdata <- sim <- y <- NULL
-  attr(bc$Variable, "correction") <- method
+  rm(pred, newdata, sim, y)
+  gc()
 
   # Reshape the output to drop any unused dimensions
-  bc <- redim(bc, drop = TRUE)
-  message("[", Sys.time(), "] Done.")
+  bc <- lapply(bc, function(bc.i) redim(bc.i, drop = TRUE))
 
   # Return the bias-corrected data
+  message("[", Sys.time(), "] Done.")
   return(bc)
 }
 
@@ -869,7 +982,6 @@ biasCorrection1D <- function(o, p, s,
                              parallel = FALSE,
                              max.ncores = 16,
                              ncores = NULL) {
-  browser()
 
   # Check parallel processing options
   parallel.pars <- parallelCheck(parallel, max.ncores, ncores)
@@ -885,7 +997,7 @@ biasCorrection1D <- function(o, p, s,
     # Multivariate methods of bias correction #
     ###########################################
     message("\n[", Sys.time(), "] Multivariable bias correction method used:", method)
-    
+
     # Check if precipitation/pr is a variable and the option is TRUE
     if ((!precip) & ("pr" %in% names(o))) {
       message("[", Sys.time(), "] Argument 'precipitation' is set as ", precip, " and 'pr' is among the variables.")
@@ -893,7 +1005,7 @@ biasCorrection1D <- function(o, p, s,
     if ((precip) & !("pr" %in% names(o))) {
       message("[", Sys.time(), "] Argument 'precipitation' is set as ", precip, " and 'pr' is not among the variables.")
     }
-    
+
     # Restructure the lists to adapt them to the input of the MBC library functions
     # All lists of o, p and s have the same dimension (time dimension)
     o <- lapply(1:length(o[[1]]), function(i) sapply(o, "[[", i))
@@ -903,12 +1015,11 @@ biasCorrection1D <- function(o, p, s,
     # Bias correction methods
     mbc_out <- mapply_fun(mbc_methods, o, p, s, MoreArgs = list(method, precip, pr.threshold, mbc.args))
     yout <- list()
-    
+
     # Group the lists in matrix
     for (i.name in attributes(mbc_out)$dimnames[[1]]) {
       yout[[i.name]] <- do.call(cbind, unlist(mbc_out[i.name, ], recursive = FALSE))
-      }
-    
+    }
   }
   else {
 
@@ -916,7 +1027,7 @@ biasCorrection1D <- function(o, p, s,
     # Univariate methods of bias correction #
     #########################################
     message("\n[", Sys.time(), "] Univariate bias correction method used: ", method)
-    
+
     name.var <- names(o)
     o <- o[[1]]
     p <- p[[1]]
@@ -953,13 +1064,13 @@ biasCorrection1D <- function(o, p, s,
       out <- mapply_fun(isimip3, o, p, s, MoreArgs = isimip3.args) # this method is in a separate file
     }
     # INCLUIR AQUI METODOS UNIVARIABLES NUEVOS
-    
-    
+
+
     # Transform back to list and add variable name
     yout <- list()
     yout[[name.var]] <- out
   }
-  
+
   return(yout)
 }
 
@@ -1170,7 +1281,6 @@ pqm <- function(o, p, s, fitdistr.args, precip, pr.threshold) {
 #' @author S. Herrera and M. Iturbide
 
 eqm <- function(o, p, s, precip, pr.threshold, n.quantiles, extrapolation) {
-
   if (precip == TRUE) {
     threshold <- pr.threshold
     if (any(!is.na(o))) {
@@ -1740,7 +1850,7 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, mbc.args) {
     yout <- list()
     names.var <- suppressWarnings(colnames(o))
     names.mbc <- c("mhat.c", "mhat.p")
-    for (name.v in names.var){
+    for (name.v in names.var) {
       for (name.mbc in names.mbc) {
         yout[[paste0(name.v, "_", name.mbc)]] <- list(matrix(NA, nrow = nrow(o), ncol = 1))
       }
@@ -1759,21 +1869,21 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, mbc.args) {
       o[o < pr.threshold & !is.na(o)] <- runif(sum(o < pr.threshold, na.rm = TRUE), min = epsilon, max = pr.threshold)
       p[p < pr.threshold & !is.na(p)] <- runif(sum(p < pr.threshold, na.rm = TRUE), min = epsilon, max = pr.threshold)
       s[s < pr.threshold & !is.na(s)] <- runif(sum(s < pr.threshold, na.rm = TRUE), min = epsilon, max = pr.threshold)
-    } 
-    
-    
+    }
+
+
     # Apply the multivariabe bias correction method
     if (method == "mbcr") {
       mbc_out <- do.call(mbc_r, list(o = o, p = p, s = s, mbc.args = mbc.args))
     } else if (method == "mbcn") {
       mbc_out <- do.call(mbc_n, list(o = o, p = p, s = s, mbc.args = mbc.args))
     }
-    
+
     # Reshape the result
     yout <- list()
     names.var <- suppressWarnings(colnames(o))
     names.mbc <- suppressWarnings(names(mbc_out))
-    for (name.v in names.var){
+    for (name.v in names.var) {
       for (name.mbc in names.mbc) {
         aux <- mbc_out[[name.mbc]][, name.v, drop = FALSE]
         dimnames(aux) <- NULL # Remove attributes
@@ -1795,14 +1905,14 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, mbc.args) {
 #' @author JJ. Velasco
 
 mbc_r <- function(o, p, s, mbc.args) {
-  
+
   # List join
   arg.list <- list(o.c = o, m.c = p, m.p = s)
   arg.list <- append(arg.list, mbc.args)
-  
+
   # Call MBCr function of MBC library
   yout <- do.call(MBCr, arg.list)
-  
+
   return(yout)
 }
 

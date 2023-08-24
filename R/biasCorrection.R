@@ -504,8 +504,6 @@ biasCorrectionXD <- function(y, x, newdata,
       interpGrid.args[["grid"]] <- newdata
       suppressWarnings(suppressMessages(sim <- do.call("interpGrid", interpGrid.args)))
 
-      browser()
-
       # Check if the method is "delta"
       delta.method <- method == "delta"
       precip <- precipitation
@@ -545,6 +543,7 @@ biasCorrectionXD <- function(y, x, newdata,
       }
 
       # Define the windows for bias correction
+      browser()
       if (!is.null(window)) {
             win <- getWindowIndex(y = y, x = pred, newdata = sim, window = window, delta.method = delta.method)
       } else {
@@ -562,6 +561,7 @@ biasCorrectionXD <- function(y, x, newdata,
       if (delta.method) winarr <- array(dim = c(n.run, n.mem, getShape(y)))
 
       # Perform bias correction for each window
+      browser()
       for (j in 1:length(win)) {
             yind <- win[[j]]$obsWindow
             outind <- win[[j]]$step
@@ -576,8 +576,6 @@ biasCorrectionXD <- function(y, x, newdata,
                   runarr <- lapply(1:n.run, function(l){
                         memarr <- lapply(1:n.mem, function(m){
                               
-                              browser()
-
                               # Print join members message
                               if (j == 1 & m == 1) {
                                     if (!isTRUE(join.members)) {
@@ -621,7 +619,6 @@ biasCorrectionXD <- function(y, x, newdata,
                                                       parallel = parallel,
                                                       max.ncores = max.ncores,
                                                       ncores = ncores)  
-                              browser()
 
                               # Reshape the matrix back to the original dimensions if needed
                               if (!station) {
@@ -630,16 +627,16 @@ biasCorrectionXD <- function(y, x, newdata,
                               }
                               mat
                         })
-
                         # Combine the bias-corrected results for each member
                         unname(do.call("abind", list(memarr, along = 0)))
                   })
+                  browser()
                   yw <- pw <- sw <- NULL
                   winarr[,,outind,,] <- unname(do.call("abind", list(runarr, along = 0))) 
                   runarr <- NULL
             }
       }
-
+      browser()
       # Store the bias-corrected data in the output variable
       bc$Data <- unname(do.call("abind", list(winarr, along = 3)))
       winarr <- NULL
