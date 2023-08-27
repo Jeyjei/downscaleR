@@ -433,7 +433,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
                                    max.ncores = max.ncores,
                                    ncores = ncores)
             })
-
+            browser()
             # Combine the outputs of each fold
             output <- redim(bindGrid(output.list, dimension = "time"), drop = TRUE)
             # al <- which(getDim(x) == "time")
@@ -446,7 +446,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
             # output$Dates <- x$Dates
             output$Data[which(is.infinite(output$Data))] <- NA
       }
-
+    
       # Subset the output based on the seasonal information of the target variable
       output <- subsetGrid(output, season = seas)
 

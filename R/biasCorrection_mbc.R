@@ -338,13 +338,13 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
     newdata <- x
     nwdatamssg <- FALSE
   }
-  
+
   isMBC <- FALSE
   if (method == "mbcr" | method == "mbcn") {
     message("[", Sys.time(), "] Multivariable bias correction method selected\n")
     isMBC <- TRUE
-    
-    y <- setNames(y, lapply(unname(y), function(k) k$Variable$varName))
+
+    y <- setNames(y, lapply(unname(y), function(k) k$Variable$varName)) # getVarNames(k)
     x <- setNames(x, lapply(unname(x), function(k) k$Variable$varName))
     newdata <- setNames(newdata, lapply(unname(newdata), function(k) k$Variable$varName))
 
@@ -414,10 +414,24 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
     return(all(unit_y == unit_x, unit_y == unit_newdata))
   }, y, x, newdata, SIMPLIFY = FALSE, USE.NAMES = TRUE)
 
+  # Check the dim of a variable is the same in all periods
+  status_dim <- mapply(function(y_f, x_f, newx_f) {
+    unit_y <- getDim(y_f)
+    unit_x <- getDim(x_f)
+    unit_newdata <- getDim(newx_f)
+
+    return(all(unit_y == unit_x, unit_y == unit_newdata))
+  }, y, x, newdata, SIMPLIFY = FALSE, USE.NAMES = TRUE)
+
   for (var_i in names(y)) {
     if (!status_unit[[var_i]]) {
       message("[", Sys.time(), "] The variables of model", var_i, ") do not have the same units")
       message("[", Sys.time(), "] Run the 'bias Correction' function again, making sure that the units of the same variable is the same")
+      return(NA)
+    }
+    if (!status_dim[[var_i]]) {
+      message("[", Sys.time(), "] The variables of model", var_i, ") do not have the same dimensions")
+      message("[", Sys.time(), "] Run the 'bias Correction' function again, making sure that the dimensions of the same variable are the same")
       return(NA)
     }
   }
@@ -435,8 +449,6 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
   y <- lapply(yx, function(k) k[[1]])
   x <- lapply(yx, function(k) k[[2]])
 
-
-  browser()
 
   # Perform bias correction based on the cross-validation type
   if (cross.val == "none") {
@@ -468,7 +480,6 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
       output.i$Data[which(is.infinite(output.i$Data))] <- NA
       return(output.i)
     })
-
   }
   else {
     # Cross-validation
@@ -479,11 +490,11 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
     # Perform cross-validation based on the type
     if (cross.val == "loo") {
       # Leave-one-out cross-validation
-      years <- as.list(unique(getYearsAsINDEX(x)))
+      years <- as.list(unique(getYearsAsINDEX(x[[1]])))
     } else if (cross.val == "kfold" & !is.null(folds)) {
       # k-fold cross-validation with user-specified folds
       if (!is.list(folds)) {
-        avy <- unique(getYearsAsINDEX(y))
+        avy <- unique(getYearsAsINDEX(y[[1]]))
         ind <- rep(1:folds, length(avy) / folds, length.out = length(avy))
         ind <- if (consecutive) {
           sort(ind)
@@ -502,25 +513,29 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
       target.year <- years[[i]]
       rest.years <- setdiff(unlist(years), target.year)
       station <- FALSE
-      if ("loc" %in% getDim(y)) station <- TRUE
-      yy <- redim(y, member = FALSE)
-      yy <- if (method == "delta") {
-        subsetGrid(yy, years = target.year, drop = FALSE)
+      if ("loc" %in% getDim(y[[1]])) station <- TRUE
+      yy <- lapply(y, function(k) redim(k, member = FALSE))
+      if (method == "delta") {
+        yy <- lapply(yy, function(yy.i) subsetGrid(yy.i, years = target.year, drop = FALSE))
       } else {
-        subsetGrid(yy, years = rest.years, drop = FALSE)
+        yy <- lapply(yy, function(yy.i) subsetGrid(yy.i, years = rest.years, drop = FALSE))
       }
+
       if (isTRUE(station)) {
-        yy$Data <- adrop(yy$Data, drop = 3)
-        attr(yy$Data, "dimensions") <- c(setdiff(getDim(yy), c("lat", "lon")), "loc")
+        yy <- lapply(yy, function(yy.i) {
+          yy.i$Data <- adrop(yy.i$Data, drop = 3)
+          attr(yy.i$Data, "dimensions") <- c(setdiff(getDim(yy.i), c("lat", "lon")), "loc")
+          return(yy.i)
+        })
       } else {
-        yy <- redim(yy, drop = TRUE)
+        yy <- lapply(yy, function(yy.i) redim(yy.i, drop = TRUE))
       }
-      newdata2 <- subsetGrid(x, years = target.year, drop = F)
-      xx <- subsetGrid(x, years = rest.years, drop = F)
+      newdata2 <- lapply(x, function(k) subsetGrid(k, years = target.year, drop = F))
+      xx <- lapply(x, function(k) subsetGrid(k, years = rest.years, drop = F))
       message("Validation ", i, ", ", length(unique(years)) - i, " remaining")
 
       # Apply biasCorrectionXD
-      biasCorrectionXD(
+      output <- biasCorrectionXD(
         y = yy, x = xx, newdata = newdata2, precipitation = precipitation,
         method = method,
         window = window,
@@ -537,10 +552,22 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
         max.ncores = max.ncores,
         ncores = ncores
       )
+      return(output)
     })
 
+
     # Combine the outputs of each fold
-    output <- redim(bindGrid(output.list, dimension = "time"), drop = TRUE)
+    output <- list()
+    for (var.i in names(output.list[[1]])) {
+      out.i <- lapply(output.list, function(output.i) output.i[[var.i]])
+      output[[var.i]] <- redim(bindGrid(out.i, dimension = "time"), drop = TRUE)
+    }
+
+    # Remove intermediate objects
+    rm(output.list, out.i)
+    gc()
+
+    # output <- redim(bindGrid(output.list, dimension = "time"), drop = TRUE)
     # al <- which(getDim(x) == "time")
     # Data <- sapply(output.list, function(n) unname(n$Data), simplify = FALSE)
     # bindata <- unname(do.call("abind", c(Data, along = al)))
@@ -549,28 +576,32 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
     # output$Data <- bindata
     # attr(output$Data, "dimensions") <- dimNames
     # output$Dates <- x$Dates
-    output$Data[which(is.infinite(output$Data))] <- NA
-  }
+    # output$Data[which(is.infinite(output$Data))] <- NA
 
-  browser()
+    # Replace infinite values with NA
+    output <- lapply(output, function(output.i) {
+      output.i$Data[which(is.infinite(output.i$Data))] <- NA
+      return(output.i)
+    })
+  }
 
   # Subset the output based on the seasonal information of the target variable
   for (var.i in names(output)) {
     name.var <- strsplit(var.i, "_")[[1]][1]
     output[[var.i]] <- subsetGrid(output[[var.i]], season = seas[[name.var]])
   }
-  
+
   # Returns a "grid" (usual output) if a univariate bias correction method has been used
-  if (names(output) == 1) {
+  if (length(names(output)) == 1) {
     output <- output[[1]]
   }
-  
+
   # Notify the user of the exit of the function
   if (isMBC) {
     message("You have used a multivariable bias correction method.")
     message("The output of the function is the corrected variables, \nboth of the calibration period and the projection period.")
   }
-  
+
   # Return the bias-corrected climate data
   return(output)
 }
@@ -910,7 +941,6 @@ biasCorrectionXD <- function(y, x, newdata,
     }
 
     # Add attribute about method of bias correction
-    browser()
     attr(bc[[var.i]]$Variable, "correction") <- method
     attr(bc[[var.i]]$Variable, "metadata_correction") <- paste0("using ", paste(names(sim), collapse = ", "))
   }
