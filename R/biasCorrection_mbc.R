@@ -292,7 +292,7 @@
 #' )
 #' }
 biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
-                           method = c("delta", "scaling", "eqm", "pqm", "gpqm", "loci", "dqm", "qdm", "isimip3", "mbcr", "mbcn"),
+                           method = c("delta", "scaling", "eqm", "pqm", "gpqm", "loci", "dqm", "qdm", "isimip3", "mbcr", "mbcp", "mbcn"),
                            cross.val = c("none", "loo", "kfold"),
                            folds = NULL,
                            consecutive = TRUE,
@@ -318,7 +318,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
   if (method == "gqm") stop("'gqm' is not a valid choice anymore. Use method = 'pqm' instead and set fitdistr.args = list(densfun = 'gamma')")
 
   # Match the method argument with the available choices
-  method <- match.arg(method, choices = c("delta", "scaling", "eqm", "pqm", "gpqm", "mva", "loci", "ptr", "variance", "dqm", "qdm", "isimip3", "mbcr", "mbcn"))
+  method <- match.arg(method, choices = c("delta", "scaling", "eqm", "pqm", "gpqm", "mva", "loci", "ptr", "variance", "dqm", "qdm", "isimip3", "mbcr", "mbcp", "mbcn"))
 
   # Match the cross.val argument with the available choices
   cross.val <- match.arg(cross.val, choices = c("none", "loo", "kfold"))
@@ -340,7 +340,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
   }
 
   isMBC <- FALSE
-  if (method == "mbcr" | method == "mbcn") {
+  if (method %in% c("mbcr", "mbcp", "mbcn")) {
     message("[", Sys.time(), "] Multivariable bias correction method selected\n")
     isMBC <- TRUE
 
@@ -1021,7 +1021,7 @@ biasCorrection1D <- function(o, p, s,
   if (parallel.pars$hasparallel) on.exit(parallel::stopCluster(parallel.pars$cl))
 
   # Perform bias correction based on the selected method
-  if (method %in% c("mbcr", "mbcn")) {
+  if (method %in% c("mbcr", "mbcp", "mbcn")) {
 
     ###########################################
     # Multivariate methods of bias correction #
@@ -1863,6 +1863,8 @@ qdm <- function(o, p, s, precip, pr.threshold, n.quantiles, jitter.factor = 0.01
 #' @param o A vector (e.g. station data) containing the observed climate data for the training period
 #' @param p A vector containing the simulated climate by the model for the training period.
 #' @param s A vector containing the simulated climate for the variable used in \code{p}, but considering the test period.
+#' @param method Multivariate bias correction method applied. Current accepted values are \code{"mbcr"}, \code{"mbcp"},
+#'  \code{"mbcn"}. See details.
 #' @param precip Logical for precipitation data. If TRUE Adjusts precipitation
 #' frequency in 'x' (prediction) to the observed frequency in 'y'. This is a preprocess to bias correct
 #' precipitation data following Themeßl et al. (2012). To adjust the frequency,
@@ -1905,6 +1907,8 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, mbc.args) {
     # Apply the multivariabe bias correction method
     if (method == "mbcr") {
       mbc_out <- do.call(mbc_r, list(o = o, p = p, s = s, mbc.args = mbc.args))
+    } else if (method == "mbcp") {
+      mbc_out <- do.call(mbc_p, list(o = o, p = p, s = s, mbc.args = mbc.args))
     } else if (method == "mbcn") {
       mbc_out <- do.call(mbc_n, list(o = o, p = p, s = s, mbc.args = mbc.args))
     }
@@ -1943,6 +1947,28 @@ mbc_r <- function(o, p, s, mbc.args) {
   # Call MBCr function of MBC library
   yout <- do.call(MBCr, arg.list)
 
+  return(yout)
+}
+
+#' @title Pearson correlation method for Multivariate bias correction
+#' @description Multivariate bias correction that matches marginal distributions using QDM and the Pearson correlation dependence structure following Cannon (2016).
+#' @param o A vector (e.g. station data) containing the observed climate data for the training period
+#' @param p A vector containing the simulated climate by the model for the training period.
+#' @param s A vector containing the simulated climate for the variable used in \code{p}, but considering the test period.
+#' @param mbc.args Named list of arguments passed to function \code{\link{mbc_methods}}.
+#' @keywords internal
+#' @importFrom MBC MBCp
+#' @author JJ. Velasco
+
+mbc_p <- function(o, p, s, mbc.args) {
+  
+  # List join
+  arg.list <- list(o.c = o, m.c = p, m.p = s)
+  arg.list <- append(arg.list, mbc.args)
+  
+  # Call MBCp function of MBC library
+  yout <- do.call(MBCp, arg.list)
+  
   return(yout)
 }
 
