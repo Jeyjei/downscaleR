@@ -21,7 +21,7 @@
 #' @template templateObsPredSim
 #' @param method method applied. Current accepted values are \code{"eqm"}, \code{"delta"},
 #'  \code{"scaling"}, \code{"pqm"} and \code{"gpqm"} \code{"variance"},\code{"loci"}, \code{"ptr"},
-#'  \code{"dqm"}, \code{"qdm"}, \code{"isimip3"}. See details.
+#'  \code{"dqm"}, \code{"qdm"}, \code{"isimip3"}, \code{"mbcr"}, \code{"mbcp"}, \code{"mbcn"} . See details.
 #' @param precipitation Logical for precipitation data (default to FALSE). If TRUE adjusts precipitation
 #' frequency in 'x' (prediction) to the observed frequency in 'y' (see Details). To adjust the frequency,
 #' parameter \code{wet.threshold} is used (see below).
@@ -70,7 +70,8 @@
 #' The methods available are \code{"eqm"}, \code{"delta"},
 #' \code{"scaling"}, \code{"pqm"}, \code{"gpqm"}, \code{"loci"},
 #' \code{"ptr"}  (the four latter used only for precipitation),
-#' \code{"variance"} (only for temperature), \code{"dqm"} and \code{"qdm"}.
+#' \code{"variance"} (only for temperature), \code{"dqm"}, \code{"qdm"},
+#' \code{"mbcr"}, \code{"mbcp"} and \code{"mbcn"}.
 #'
 #'  These are next briefly described:
 #'
@@ -156,7 +157,22 @@
 #'
 #' \strong{isimip3}
 #'
-#'
+#' 
+#' \strong{mbcr}
+#' 
+#' Multivariate bias correction that matches marginal distributions using QDM 
+#' and the Spearman rank correlation dependence structure following Cannon (2016).
+#' 
+#' \strong{mbcp}
+#' 
+#' Multivariate bias correction that matches marginal distributions using QDM 
+#' and the Pearson correlation dependence structure following Cannon (2016).
+#' 
+#' \strong{mbcn}
+#' 
+#' Multivariate bias correction that matches the multivariate distribution using
+#' QDM and the N-dimensional probability density function transform (N-pdft) 
+#' following Cannon (2018).
 #'
 #' @section Note on the bias correction of precipitation:
 #'
@@ -197,7 +213,7 @@
 #'
 #' \item Cannon, A.J., S.R. Sobie, and T.Q. Murdock (2015) Bias Correction of GCM Precipitation by Quantile Mapping: How Well Do Methods Preserve Changes in Quantiles and Extremes?. J. Climate, 28, 6938–6959, https://doi.org/10.1175/JCLI-D-14-00754.1
 #' }
-#' @author S. Herrera, M. Iturbide, J. Bedia
+#' @author S. Herrera, M. Iturbide, J. Bedia, JJ. Velasco
 #' @export
 #' @examples \donttest{
 #' require(climate4R.datasets)
@@ -258,7 +274,7 @@
 #'   fitdistr.args = list(densfun = "normal")
 #' )
 #'
-#' # correction of future climate change data
+#' # Correction of future climate change data
 #' data("CORDEX_Iberia_tas.rcp85")
 #' newdata <- CORDEX_Iberia_tas.rcp85
 #' eqm1win <- biasCorrection(
@@ -290,6 +306,34 @@
 #'   wet.threshold = 0.1,
 #'   join.members = TRUE
 #' )
+#' 
+#' # Multivariate bias correction method
+#' data("EOBS_Iberia_pr")
+#' data("EOBS_Iberia_tas")
+#' data("CORDEX_Iberia_pr")
+#' data("CORDEX_Iberia_tas")
+#' y <- list(EOBS_Iberia_pr, EOBS_Iberia_tas)
+#' x <- list(CORDEX_Iberia_pr, CORDEX_Iberia_tas)
+#' 
+#' mbc.data <- biasCorrection(
+#'    y = y, x = x,
+#'    precipitation = TRUE,
+#'    method = "mbcr", 
+#'    window = NULL
+#' )
+#' 
+#' # Correction of future climate change data using MBC
+#' data("CORDEX_Iberia_pr.rcp85")
+#' data("CORDEX_Iberia_tas.rcp85")
+#' newdata <- list(CORDEX_Iberia_pr.rcp85, CORDEX_Iberia_tas.rcp85)
+#' 
+#' mbc.data <- biasCorrection(
+#'    y = y, x = x,
+#'    newdata = newdata,
+#'    precipitation = TRUE,
+#'    method = "mbcr", 
+#'    window = NULL,
+#' ) 
 #' }
 biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
                            method = c("delta", "scaling", "eqm", "pqm", "gpqm", "loci", "dqm", "qdm", "isimip3", "mbcr", "mbcp", "mbcn"),
@@ -1891,7 +1935,7 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, mbc.args) {
   else {
 
     # For ratio data, treat exact zeros as left censored values less than pr.threshold
-    if ((precip) & ("pr" %in% colnames(o))) {
+    if ((precip) & ( length(intersect(c("pr", "tp", "precipitation", "precip"), colnames(o))) > 0 )) {
       message("[", Sys.time(), "] Apply threshold to precipitation")
       epsilon <- .Machine$double.eps
       o[, "pr"][o[, "pr"] < pr.threshold & !is.na(o[, "pr"])] <- runif(sum(o[, "pr"] < pr.threshold & !is.na(o[, "pr"])), min = epsilon, max = pr.threshold)
@@ -1935,6 +1979,14 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, mbc.args) {
 #' @param s A vector containing the simulated climate for the variable used in \code{p}, but considering the test period.
 #' @param mbc.args Named list of arguments passed to function \code{\link{mbc_methods}}.
 #' @keywords internal
+#' @references
+#'
+#' \itemize{
+#' \item Cannon, A. J. (2016). Multivariate bias correction of climate model output: Matching marginal distributions and intervariable dependence structure. Journal of Climate, 29(19), 7045-7064.
+#' 
+#' \item Cannon, A. J. (2018). Multivariate quantile mapping bias correction: an N-dimensional probability density function transform for climate model simulations of multiple variables. Climate dynamics, 50, 31-49.
+#' }
+#' 
 #' @importFrom MBC MBCr
 #' @author JJ. Velasco
 
@@ -1957,6 +2009,14 @@ mbc_r <- function(o, p, s, mbc.args) {
 #' @param s A vector containing the simulated climate for the variable used in \code{p}, but considering the test period.
 #' @param mbc.args Named list of arguments passed to function \code{\link{mbc_methods}}.
 #' @keywords internal
+#' @references
+#'
+#' \itemize{
+#' \item Cannon, A. J. (2016). Multivariate bias correction of climate model output: Matching marginal distributions and intervariable dependence structure. Journal of Climate, 29(19), 7045-7064.
+#' 
+#' \item Cannon, A. J. (2018). Multivariate quantile mapping bias correction: an N-dimensional probability density function transform for climate model simulations of multiple variables. Climate dynamics, 50, 31-49.
+#' }
+#' 
 #' @importFrom MBC MBCp
 #' @author JJ. Velasco
 
@@ -1979,10 +2039,19 @@ mbc_p <- function(o, p, s, mbc.args) {
 #' @param s A vector containing the simulated climate for the variable used in \code{p}, but considering the test period.
 #' @param mbc.args Named list of arguments passed to function \code{\link{mbc_methods}}.
 #' @keywords internal
+#' @references Cannon, A. J. (2018). Multivariate quantile mapping bias correction: an N-dimensional probability density function transform for climate model simulations of multiple variables. Climate dynamics, 50, 31-49.
 #' @importFrom MBC MBCn
 #' @author JJ. Velasco
 
 mbc_n <- function(o, p, s, mbc.args) {
+  # List join
+  arg.list <- list(o.c = o, m.c = p, m.p = s)
+  arg.list <- append(arg.list, mbc.args)
+  
+  # Call MBCn function of MBC library
+  yout <- do.call(MBCn, arg.list)
+  
+  return(yout)
 
 }
 
