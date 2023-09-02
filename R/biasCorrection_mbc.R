@@ -44,7 +44,7 @@
 #' (\code{densfun}, \code{start}, \code{...}). Only used when applying the "pqm" method
 #' (parametric quantile mapping). Please, read the \code{\link[MASS]{fitdistr}} help
 #' document  carefully before setting the parameters in \code{fitdistr.args}.
-#' @param n.quantiles Integer indicating the number of quantiles to be considered when method = "eqm", "dqm", "qdm". Default is NULL,
+#' @param n.quantiles Integer indicating the number of quantiles to be considered when method = "eqm", "dqm", "qdm", "mbcr", "mbcp", "mbcn". Default is NULL,
 #' that considers all quantiles, i.e. \code{n.quantiles = length(x[i,j])} (being \code{i} and \code{j} the
 #' coordinates in a single location).
 #' @param extrapolation Character indicating the extrapolation method to be applied to correct values in
@@ -349,7 +349,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
                            theta = c(.95, .05),
                            detrend = TRUE,
                            isimip3.args = NULL,
-                           mbc.args = NULL,
+                           mbc.args = list(),
                            join.members = FALSE,
                            return.raw = FALSE,
                            interpGrid.args = list(),
@@ -493,7 +493,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
   y <- lapply(yx, function(k) k[[1]])
   x <- lapply(yx, function(k) k[[2]])
 
-
+  
   # Perform bias correction based on the cross-validation type
   if (cross.val == "none") {
     # No cross-validation
@@ -526,6 +526,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
     })
   }
   else {
+    
     # Cross-validation
     if (nwdatamssg) {
       message("'newdata' will be ignored for cross-validation")
@@ -577,7 +578,8 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
       newdata2 <- lapply(x, function(k) subsetGrid(k, years = target.year, drop = F))
       xx <- lapply(x, function(k) subsetGrid(k, years = rest.years, drop = F))
       message("Validation ", i, ", ", length(unique(years)) - i, " remaining")
-
+      
+      
       # Apply biasCorrectionXD
       output <- biasCorrectionXD(
         y = yy, x = xx, newdata = newdata2, precipitation = precipitation,
@@ -596,6 +598,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
         max.ncores = max.ncores,
         ncores = ncores
       )
+      
       return(output)
     })
 
@@ -739,7 +742,8 @@ biasCorrectionXD <- function(y, x, newdata,
 
   # Check if the method is "delta"
   delta.method <- method == "delta"
-
+  mbc.method <- method %in% c("mbcr", "mbcp", "mbcn")
+  
   # Set the precipitation argument and print a message
   precip <- precipitation
   message("[", Sys.time(), "] Argument precipitation is set as ", precip, ", please ensure that this matches your data.")
@@ -804,11 +808,25 @@ biasCorrectionXD <- function(y, x, newdata,
 
   # Initialize the array for storing the bias-corrected data
   winarr <- array(dim = dim(sim[[1]]$Data))
-  if (delta.method) winarr <- array(dim = c(n.run, n.mem, getShape(y)))
-  if (length(y) == 1) {
+  if (delta.method) { 
+    winarr <- array(dim = c(n.run, n.mem, getShape(y)))
+  }
+  if (length(y) == 1) { # For UBC methods
     winarr.list <- rep(list(winarr), times = 1)
-  } else {
-    winarr.list <- rep(list(winarr), times = 2 * length(y))
+    # Remove intermediate objects
+    rm(winarr)
+    gc()
+  } 
+  if (mbc.method) { # For MBC methods
+    winarr.list <- append(rep(list(array(dim = dim(pred[[1]]$Data))), times = length(y)),
+                          rep(list(array(dim = dim(sim[[1]]$Data))), times = length(y))
+    )
+    # Assign names
+    # The order is important since you create winarr.list with dim(pred) before dim(sim)
+    names.mbc <- c("mhat.c", "mhat.p") # MBC methods use this names to refer to the data
+    names.var <- names(y)
+    names_winarr <- do.call(paste, c(expand.grid(names.var, names.mbc), sep = "_"))
+    names(winarr.list) <- names_winarr
   }
 
 
@@ -888,7 +906,7 @@ biasCorrectionXD <- function(y, x, newdata,
             max.ncores = max.ncores,
             ncores = ncores
           )
-
+          
           # Reshape the matrix back to the original dimensions if needed
           if (!station) {
             mat <- setNames(lapply(names(mat), function(var.i) {
@@ -902,10 +920,10 @@ biasCorrectionXD <- function(y, x, newdata,
               mat[[var.i]] <- mat2Dto3Darray(mat[[var.i]], xy[[name.var]]$x, xy[[name.var]]$y)
             }), names(mat))
           }
-
+          
           return(mat)
         })
-
+        
         # Combine the bias-corrected results for each member
         return(lapply(memarr[[1]], function(memarr.i) {
           unname(do.call("abind", list(memarr.i, along = 0)))
@@ -916,17 +934,22 @@ biasCorrectionXD <- function(y, x, newdata,
       yw <- pw <- sw <- NULL
       rm(yw, pw, sw)
       gc()
-
+      
+      
       # Add names to the winarr.list
       if (is.null(names(winarr.list))) {
         names(winarr.list) <- names(runarr[[1]])
       }
-
+      
       # Fill winarr variable for each list
       for (name.runarr in names(runarr[[1]])) {
-        winarr.list[[name.runarr]][, , outind, , ] <- unname(do.call("abind", list(runarr[[1]][[name.runarr]], along = 0)))
+        if ((grepl("mhat.c", name.runarr)) & (mbc.method)) { # For MBC methos
+          winarr.list[[name.runarr]][, , yind, , ] <- unname(do.call("abind", list(runarr[[1]][[name.runarr]], along = 0)))
+        } else {
+          winarr.list[[name.runarr]][, , outind, , ] <- unname(do.call("abind", list(runarr[[1]][[name.runarr]], along = 0)))
+        }
       }
-
+      
       # Remove intermediate objects
       runarr <- NULL
       rm(runarr)
@@ -936,7 +959,7 @@ biasCorrectionXD <- function(y, x, newdata,
 
   # Obtain names of bc variable
   names.bc <- names(bc)
-
+  
   # Store the bias-corrected data in the output variable for each list
   for (var.i in names(winarr.list)) {
     name.var <- strsplit(var.i, "_")[[1]][1]
@@ -952,42 +975,55 @@ biasCorrectionXD <- function(y, x, newdata,
   winarr.list <- NULL
   rm(winarr, winarr.list)
   gc()
-
+  
   # Reshape the output to the original dimensions if it had a station dimension
   if (station) {
     bc <- lapply(bc, function(bc.i) redim(bc.i, loc = TRUE))
   }
-
-  # Set the appropriate Dates attribute for the bias-corrected data
+  
+  
   for (var.i in names(bc)) {
     name.var <- strsplit(var.i, "_")[[1]][1]
-    bc[[var.i]][["Dates"]] <- sim[[name.var]][["Dates"]]
-
+    
+    # Select the metadata of each list
+    if ((grepl("mhat.c", var.i)) & (mbc.method)) {
+      data_used <- pred
+    } else { # mhat.p or UBC method return
+      data_used <- sim
+    }
+    
+    # Set the appropriate Dates attribute for the bias-corrected data
+    bc[[var.i]][["Dates"]] <- data_used[[name.var]][["Dates"]]
+    
     # Recover the member dimension when join.members=TRUE:
     if (isTRUE(join.members)) {
       if (method == "delta") {
         bc[[var.i]] <- recoverMemberDim(plain.grid = pred[[name.var]], bc.grid = bc[[var.i]], newdata = newdata[[name.var]])
       } else {
-        bc[[var.i]] <- recoverMemberDim(plain.grid = sim[[name.var]], bc.grid = bc[[var.i]], newdata = newdata[[name.var]])
+        bc[[var.i]] <- recoverMemberDim(plain.grid = data_used[[name.var]], bc.grid = bc[[var.i]], newdata = newdata[[name.var]])
       }
     } else {
-      bc[[var.i]]$InitializationDates <- sim[[name.var]]$InitializationDates
-      bc[[var.i]]$Members <- sim[[name.var]]$Members
+      bc[[var.i]]$InitializationDates <- data_used[[name.var]]$InitializationDates
+      bc[[var.i]]$Members <- data_used[[name.var]]$Members
     }
 
     # Add "_raw" suffix to the variable name if return.raw is TRUE
     if (return.raw) {
-      sim[[name.var]][["Variable"]][["varName"]] <- paste0(bc[[var.i]][["Variable"]][["varName"]], "_raw")
-      bc[[var.i]] <- makeMultiGrid(bc[[var.i]], sim[[name.var]])
+      data_used[[name.var]][["Variable"]][["varName"]] <- paste0(bc[[var.i]][["Variable"]][["varName"]], "_raw")
+      bc[[var.i]] <- makeMultiGrid(bc[[var.i]], data_used[[name.var]])
       if (station) {
         bc[[var.i]] <- redim(bc[[var.i]], loc = TRUE)
       }
     }
-
+    
     # Add attribute about method of bias correction
     attr(bc[[var.i]]$Variable, "correction") <- method
     attr(bc[[var.i]]$Variable, "metadata_correction") <- paste0("using ", paste(names(sim), collapse = ", "))
-  }
+    
+    # Remove intermediate objects
+    rm(data_used)
+    gc()
+    }
 
   # Remove intermediate objects
   pred <- newdata <- sim <- y <- NULL
@@ -1087,9 +1123,9 @@ biasCorrection1D <- function(o, p, s,
     s <- lapply(1:length(s[[1]]), function(i) sapply(s, "[[", i))
 
     # Bias correction methods
-    mbc_out <- mapply_fun(mbc_methods, o, p, s, MoreArgs = list(method, precip, pr.threshold, mbc.args))
+    mbc_out <- mapply_fun(mbc_methods, o, p, s, MoreArgs = list(method, precip, pr.threshold, n.quantiles, mbc.args))
     yout <- list()
-
+    
     # Group the lists in matrix
     for (i.name in attributes(mbc_out)$dimnames[[1]]) {
       yout[[i.name]] <- do.call(cbind, unlist(mbc_out[i.name, ], recursive = FALSE))
@@ -1915,21 +1951,26 @@ qdm <- function(o, p, s, precip, pr.threshold, n.quantiles, jitter.factor = 0.01
 #' parameter \code{pr.threshold} is used (see below).
 #' @param pr.threshold The minimum value that is considered as a non-zero precipitation. Ignored when
 #' \code{precip = FALSE}. See details in function \code{biasCorrection}.
+#' @param n.quantile Integer indicating the number of quantiles to be considered. Default is NULL,
+#' that considers all quantiles.
 #' @param mbc.args Named list of arguments passed to function \code{\link{mbc_methods}}.
+#' @param jitter.factor Integer. Jittering to accomodate ties. Default: 0.01.
 #' @keywords internal
 #' @author JJ. Velasco
 
-mbc_methods <- function(o, p, s, method, precip, pr.threshold, mbc.args) {
+mbc_methods <- function(o, p, s, method, precip, pr.threshold, n.quantile = NULL, mbc.args = list(), jitter.factor = 0.01) {
   if (all(is.na(o)) | all(is.na(p)) | all(is.na(s))) {
-
+    
     # Reshape the result
     yout <- list()
     names.var <- suppressWarnings(colnames(o))
     names.mbc <- c("mhat.c", "mhat.p")
     for (name.v in names.var) {
-      for (name.mbc in names.mbc) {
-        yout[[paste0(name.v, "_", name.mbc)]] <- list(matrix(NA, nrow = nrow(o), ncol = 1))
-      }
+      yout[[paste0(name.v, "_", "mhat.c")]] <- list(matrix(NA, nrow = nrow(o), ncol = 1))
+      yout[[paste0(name.v, "_", "mhat.p")]] <- list(matrix(NA, nrow = nrow(s), ncol = 1))
+      # for (name.mbc in names.mbc) {
+        # yout[[paste0(name.v, "_", name.mbc)]] <- list(matrix(NA, nrow = nrow(o), ncol = 1))
+      # }
     }
   }
   else {
@@ -1946,7 +1987,17 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, mbc.args) {
       p[p < pr.threshold & !is.na(p)] <- runif(sum(p < pr.threshold, na.rm = TRUE), min = epsilon, max = pr.threshold)
       s[s < pr.threshold & !is.na(s)] <- runif(sum(s < pr.threshold, na.rm = TRUE), min = epsilon, max = pr.threshold)
     }
-
+    
+    # Check if argument n.quantile exists in the list
+    if (!is.null(n.quantile)) {
+      mbc.args[["n.tau"]] <- n.quantile
+    }
+    
+    # Check if argument jitter.factor exists in the list
+    if (!("jitter.factor" %in% names(mbc.args))) {
+      mbc.args[["jitter.factor"]] <- 0 * jitter.factor
+    }
+    
 
     # Apply the multivariabe bias correction method
     if (method == "mbcr") {
@@ -1956,7 +2007,7 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, mbc.args) {
     } else if (method == "mbcn") {
       mbc_out <- do.call(mbc_n, list(o = o, p = p, s = s, mbc.args = mbc.args))
     }
-
+    
     # Reshape the result
     yout <- list()
     names.var <- suppressWarnings(colnames(o))
@@ -1978,6 +2029,7 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, mbc.args) {
 #' @param p A vector containing the simulated climate by the model for the training period.
 #' @param s A vector containing the simulated climate for the variable used in \code{p}, but considering the test period.
 #' @param mbc.args Named list of arguments passed to function \code{\link{mbc_methods}}.
+#' @details MBCr method developed by A. Canon, from \url{https://github.com/pacificclimate/ClimDown}, \url{https://cran.r-project.org/web/packages/ClimDown/}.
 #' @keywords internal
 #' @references
 #'
@@ -1988,7 +2040,9 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, mbc.args) {
 #' }
 #' 
 #' @importFrom MBC MBCr
-#' @author JJ. Velasco
+#' @author A. Cannon (acannon@@uvic.ca), JJ. Velasco
+
+
 
 mbc_r <- function(o, p, s, mbc.args) {
 
@@ -2008,6 +2062,7 @@ mbc_r <- function(o, p, s, mbc.args) {
 #' @param p A vector containing the simulated climate by the model for the training period.
 #' @param s A vector containing the simulated climate for the variable used in \code{p}, but considering the test period.
 #' @param mbc.args Named list of arguments passed to function \code{\link{mbc_methods}}.
+#' @details MBCp method developed by A. Canon, from \url{https://github.com/pacificclimate/ClimDown}, \url{https://cran.r-project.org/web/packages/ClimDown/}.
 #' @keywords internal
 #' @references
 #'
@@ -2018,7 +2073,7 @@ mbc_r <- function(o, p, s, mbc.args) {
 #' }
 #' 
 #' @importFrom MBC MBCp
-#' @author JJ. Velasco
+#' @author A. Cannon (acannon@@uvic.ca), JJ. Velasco
 
 mbc_p <- function(o, p, s, mbc.args) {
   
@@ -2039,9 +2094,10 @@ mbc_p <- function(o, p, s, mbc.args) {
 #' @param s A vector containing the simulated climate for the variable used in \code{p}, but considering the test period.
 #' @param mbc.args Named list of arguments passed to function \code{\link{mbc_methods}}.
 #' @keywords internal
+#' @details MBCn method developed by A. Canon, from \url{https://github.com/pacificclimate/ClimDown}, \url{https://cran.r-project.org/web/packages/ClimDown/}.
 #' @references Cannon, A. J. (2018). Multivariate quantile mapping bias correction: an N-dimensional probability density function transform for climate model simulations of multiple variables. Climate dynamics, 50, 31-49.
 #' @importFrom MBC MBCn
-#' @author JJ. Velasco
+#' @author A. Cannon (acannon@@uvic.ca), JJ. Velasco
 
 mbc_n <- function(o, p, s, mbc.args) {
   # List join
