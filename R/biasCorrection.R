@@ -1086,6 +1086,8 @@ biasCorrectionXD <- function(y, x, newdata,
 #' @param detrend logical. Detrend data prior to bias correction? Only for \code{"dqm"}. Default. TRUE.
 #' @param isimip3.args Named list of arguments passed to function \code{\link{isimip3}}.
 #' @param mbc.args Named list of arguments passed to function \code{\link{mbc_methods}}.
+#' @param isimip3.args If \code{TRUE}, the corrected input grid (training period, \code{x}) is also returned. 
+#' If \code{FALSE}, it is not returned. By default, \code{FALSE}.  Only for \code{"mbcr"}, \code{"mbcp"}, \code{"mbcn"} method.
 #' @template templateParallelParams
 #'
 #'
@@ -1971,7 +1973,8 @@ qdm <- function(o, p, s, precip, pr.threshold, n.quantiles, jitter.factor = 0.01
 #' @param n.quantile Integer indicating the number of quantiles to be considered. Default is NULL,
 #' that considers all quantiles.
 #' @param mbc.args Named list of arguments passed to function \code{\link{mbc_methods}}.
-#' @param return.grid.c 
+#' @param return.grid.c  If \code{TRUE}, the corrected input grid (training period, \code{x}) is also returned. 
+#' If \code{FALSE}, it is not returned. By default, \code{FALSE}.
 #' @keywords internal
 #' @author JJ. Velasco
 
