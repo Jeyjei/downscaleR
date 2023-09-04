@@ -1980,7 +1980,7 @@ qdm <- function(o, p, s, precip, pr.threshold, n.quantiles, jitter.factor = 0.01
 #' @author JJ. Velasco
 
 mbc_methods <- function(o, p, s, method, precip, pr.threshold, n.quantile = NULL, mbc.args = list(), return.grid.c = FALSE) {
-
+  
   # Define the outputs of the function
   if (return.grid.c) {
     names.mbc <- c("mhat.c", "mhat.p")
@@ -2002,7 +2002,7 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, n.quantile = NULL
     }
   }
   else {
-
+    
     # Check if argument jitter.factor exists in the list
     if ("jitter.factor" %in% names(mbc.args)) {
 
@@ -2014,7 +2014,7 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, n.quantile = NULL
       # It is set to zero so that it is not used within the mbc methods
       mbc.args[["jitter.factor"]] <- 0
     }
-
+    
     # For ratio data, treat exact zeros as left censored values less than pr.threshold
     if ((precip) & (length(intersect(c("pr", "tp", "precipitation", "precip"), colnames(o))) > 0)) {
       precip_var <- intersect(c("pr", "tp", "precipitation", "precip"), colnames(o))[1]
@@ -2024,7 +2024,7 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, n.quantile = NULL
       s[, precip_var][s[, precip_var] < pr.threshold & !is.na(s[, precip_var])] <- runif(sum(s[, precip_var] < pr.threshold & !is.na(s[, precip_var])), min = epsilon, max = pr.threshold)
 
       # It is set to zero so that it is not used within the mbc methods
-      mbc.args[["ratio"]] <- FALSE
+      mbc.args[["ratio.seq"]] <- rep(FALSE, ncol(o))
     }
 
     # Check if argument n.quantile exists in the list
@@ -2078,7 +2078,7 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, n.quantile = NULL
 
 
 mbc_r <- function(o, p, s, mbc.args) {
-
+  
   # List join
   arg.list <- list(o.c = o, m.c = p, m.p = s)
   arg.list <- append(arg.list, mbc.args)
@@ -2136,7 +2136,7 @@ mbc_n <- function(o, p, s, mbc.args) {
   # List join
   arg.list <- list(o.c = o, m.c = p, m.p = s)
   arg.list <- append(arg.list, mbc.args)
-
+  
   # Call MBCn function of MBC library
   yout <- do.call(MBCn, arg.list)
 
