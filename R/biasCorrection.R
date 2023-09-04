@@ -57,6 +57,8 @@
 #' @param detrend logical. Detrend data prior to bias correction? Only for \code{"dqm"}. Default. TRUE.
 #' @param isimip3.args Named list of arguments passed to function \code{\link{isimip3}}.
 #' @param mbc.args Named list of arguments passed to function \code{\link{mbc_methods}}.
+#' @param return.grid.c If \code{TRUE}, the corrected input grid (training period, \code{x}) is also returned. 
+#' If \code{FALSE}, it is not returned. By default, \code{FALSE}.  Only for \code{"mbcr"}, \code{"mbcp"}, \code{"mbcn"} method.
 #' @param join.members Logical indicating whether members should be corrected independently (\code{FALSE}, the default),
 #'  or joined before performing the correction (\code{TRUE}). It applies to multimember grids only (otherwise ignored).
 #' @param return.raw If TRUE, the nearest raw data to the observational reference is returned as the "var" dimension.
@@ -350,6 +352,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
                            detrend = TRUE,
                            isimip3.args = NULL,
                            mbc.args = list(),
+                           return.grid.c = FALSE,
                            join.members = FALSE,
                            return.raw = FALSE,
                            interpGrid.args = list(),
@@ -512,6 +515,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
       detrend = detrend,
       isimip3.args = isimip3.args,
       mbc.args = mbc.args,
+      return.grid.c = return.grid.c,
       return.raw = return.raw,
       interpGrid.args = interpGrid.args,
       parallel = parallel,
@@ -592,6 +596,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
         detrend = detrend,
         isimip3.args = isimip3.args,
         mbc.args = mbc.args,
+        return.grid.c = return.grid.c,
         return.raw = return.raw,
         interpGrid.args = interpGrid.args,
         parallel = parallel,
@@ -672,6 +677,7 @@ biasCorrectionXD <- function(y, x, newdata,
                              detrend,
                              isimip3.args,
                              mbc.args,
+                             return.grid.c = FALSE,
                              return.raw = FALSE,
                              interpGrid.args = list(),
                              parallel = FALSE,
@@ -818,12 +824,21 @@ biasCorrectionXD <- function(y, x, newdata,
     gc()
   } 
   if (mbc.method) { # For MBC methods
-    winarr.list <- append(rep(list(array(dim = dim(pred[[1]]$Data))), times = length(y)),
-                          rep(list(array(dim = dim(sim[[1]]$Data))), times = length(y))
-    )
-    # Assign names
-    # The order is important since you create winarr.list with dim(pred) before dim(sim)
-    names.mbc <- c("mhat.c", "mhat.p") # MBC methods use this names to refer to the data
+
+    if (return.grid.c) {
+      winarr.list <- append(rep(list(array(dim = dim(pred[[1]]$Data))), times = length(y)),
+                            rep(list(array(dim = dim(sim[[1]]$Data))), times = length(y))
+      )
+      # Assign names
+      # The order is important since you create winarr.list with dim(pred) before dim(sim)
+      names.mbc <- c("mhat.c", "mhat.p") # MBC methods use this names to refer to the data
+    } else {
+      winarr.list <- rep(list(array(dim = dim(sim[[1]]$Data))), times = length(y))
+      )
+      # Assign names
+      names.mbc <- c("mhat.p")
+    }
+    
     names.var <- names(y)
     names_winarr <- do.call(paste, c(expand.grid(names.var, names.mbc), sep = "_"))
     names(winarr.list) <- names_winarr
@@ -902,6 +917,7 @@ biasCorrectionXD <- function(y, x, newdata,
             detrend = detrend,
             isimip3.args = isimip3.args,
             mbc.args = mbc.args,
+            return.grid.c = return.grid.c,
             parallel = parallel,
             max.ncores = max.ncores,
             ncores = ncores
@@ -1089,6 +1105,7 @@ biasCorrection1D <- function(o, p, s,
                              detrend,
                              isimip3.args,
                              mbc.args,
+                             return.grid.c,
                              parallel = FALSE,
                              max.ncores = 16,
                              ncores = NULL) {
@@ -1106,7 +1123,7 @@ biasCorrection1D <- function(o, p, s,
     ###########################################
     # Multivariate methods of bias correction #
     ###########################################
-    message("\n[", Sys.time(), "] Multivariable bias correction method used:", method)
+    message("\n[", Sys.time(), "] Multivariable bias correction method used: ", method)
 
     # Check if precipitation/pr is a variable and the option is TRUE
     if ((!precip) & ("pr" %in% names(o))) {
@@ -1123,7 +1140,7 @@ biasCorrection1D <- function(o, p, s,
     s <- lapply(1:length(s[[1]]), function(i) sapply(s, "[[", i))
 
     # Bias correction methods
-    mbc_out <- mapply_fun(mbc_methods, o, p, s, MoreArgs = list(method, precip, pr.threshold, n.quantiles, mbc.args))
+    mbc_out <- mapply_fun(mbc_methods, o, p, s, MoreArgs = list(method, precip, pr.threshold, n.quantiles, mbc.args, return.grid.c))
     yout <- list()
     
     # Group the lists in matrix
@@ -1954,38 +1971,56 @@ qdm <- function(o, p, s, precip, pr.threshold, n.quantiles, jitter.factor = 0.01
 #' @param n.quantile Integer indicating the number of quantiles to be considered. Default is NULL,
 #' that considers all quantiles.
 #' @param mbc.args Named list of arguments passed to function \code{\link{mbc_methods}}.
-#' @param jitter.factor Integer. Jittering to accomodate ties. Default: 0.01.
+#' @param return.grid.c 
 #' @keywords internal
 #' @author JJ. Velasco
 
-mbc_methods <- function(o, p, s, method, precip, pr.threshold, n.quantile = NULL, mbc.args = list(), jitter.factor = 0.01) {
+mbc_methods <- function(o, p, s, method, precip, pr.threshold, n.quantile = NULL, mbc.args = list(), return.grid.c = FALSE) {
+  
+  # Define the outputs of the function
+  if (return.grid.c) {
+    names.mbc <- c("mhat.c", "mhat.p")
+  } else {
+    names.mbc <- c("mhat.p")
+  }
+  
   if (all(is.na(o)) | all(is.na(p)) | all(is.na(s))) {
     
     # Reshape the result
     yout <- list()
     names.var <- suppressWarnings(colnames(o))
-    names.mbc <- c("mhat.c", "mhat.p")
+    
     for (name.v in names.var) {
-      yout[[paste0(name.v, "_", "mhat.c")]] <- list(matrix(NA, nrow = nrow(o), ncol = 1))
+      if (return.grid.c) {
+        yout[[paste0(name.v, "_", "mhat.c")]] <- list(matrix(NA, nrow = nrow(o), ncol = 1))
+      }
       yout[[paste0(name.v, "_", "mhat.p")]] <- list(matrix(NA, nrow = nrow(s), ncol = 1))
-      # for (name.mbc in names.mbc) {
-        # yout[[paste0(name.v, "_", name.mbc)]] <- list(matrix(NA, nrow = nrow(o), ncol = 1))
-      # }
     }
   }
   else {
-
+    
+    # Check if argument jitter.factor exists in the list
+    if ("jitter.factor" %in% names(mbc.args)) {
+      
+      # Apply a small amount of jitter to accomodate ties due to limited measurement precision
+      o <- apply(o, MARGIN = 2, FUN = function(column) jitter(column, mbc.args[["jitter.factor"]]))
+      p <- apply(p, MARGIN = 2, FUN = function(column) jitter(column, mbc.args[["jitter.factor"]]))
+      s <- apply(s, MARGIN = 2, FUN = function(column) jitter(column, mbc.args[["jitter.factor"]]))
+      
+      # It is set to zero so that it is not used within the mbc methods
+      mbc.args[["jitter.factor"]] <- 0
+    }
+    
     # For ratio data, treat exact zeros as left censored values less than pr.threshold
     if ((precip) & ( length(intersect(c("pr", "tp", "precipitation", "precip"), colnames(o))) > 0 )) {
-      message("[", Sys.time(), "] Apply threshold to precipitation")
+      precip_var <- intersect(c("pr", "tp", "precipitation", "precip"), colnames(o))[1]
       epsilon <- .Machine$double.eps
-      o[, "pr"][o[, "pr"] < pr.threshold & !is.na(o[, "pr"])] <- runif(sum(o[, "pr"] < pr.threshold & !is.na(o[, "pr"])), min = epsilon, max = pr.threshold)
-      p[, "pr"][p[, "pr"] < pr.threshold & !is.na(p[, "pr"])] <- runif(sum(p[, "pr"] < pr.threshold & !is.na(p[, "pr"])), min = epsilon, max = pr.threshold)
-      s[, "pr"][s[, "pr"] < pr.threshold & !is.na(s[, "pr"])] <- runif(sum(s[, "pr"] < pr.threshold & !is.na(s[, "pr"])), min = epsilon, max = pr.threshold)
+      o[, precip_var][o[, precip_var] < pr.threshold & !is.na(o[, precip_var])] <- runif(sum(o[, precip_var] < pr.threshold & !is.na(o[, precip_var])), min = epsilon, max = pr.threshold)
+      p[, precip_var][p[, precip_var] < pr.threshold & !is.na(p[, precip_var])] <- runif(sum(p[, precip_var] < pr.threshold & !is.na(p[, precip_var])), min = epsilon, max = pr.threshold)
+      s[, precip_var][s[, precip_var] < pr.threshold & !is.na(s[, precip_var])] <- runif(sum(s[, precip_var] < pr.threshold & !is.na(s[, precip_var])), min = epsilon, max = pr.threshold)
 
-      o[o < pr.threshold & !is.na(o)] <- runif(sum(o < pr.threshold, na.rm = TRUE), min = epsilon, max = pr.threshold)
-      p[p < pr.threshold & !is.na(p)] <- runif(sum(p < pr.threshold, na.rm = TRUE), min = epsilon, max = pr.threshold)
-      s[s < pr.threshold & !is.na(s)] <- runif(sum(s < pr.threshold, na.rm = TRUE), min = epsilon, max = pr.threshold)
+      # It is set to zero so that it is not used within the mbc methods
+      mbc.args[["ratio"]] <- FALSE
     }
     
     # Check if argument n.quantile exists in the list
@@ -1993,12 +2028,6 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, n.quantile = NULL
       mbc.args[["n.tau"]] <- n.quantile
     }
     
-    # Check if argument jitter.factor exists in the list
-    if (!("jitter.factor" %in% names(mbc.args))) {
-      mbc.args[["jitter.factor"]] <- 0 * jitter.factor
-    }
-    
-
     # Apply the multivariabe bias correction method
     if (method == "mbcr") {
       mbc_out <- do.call(mbc_r, list(o = o, p = p, s = s, mbc.args = mbc.args))
@@ -2011,7 +2040,7 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, n.quantile = NULL
     # Reshape the result
     yout <- list()
     names.var <- suppressWarnings(colnames(o))
-    names.mbc <- suppressWarnings(names(mbc_out))
+    # names.mbc <- suppressWarnings(names(mbc_out))
     for (name.v in names.var) {
       for (name.mbc in names.mbc) {
         aux <- mbc_out[[name.mbc]][, name.v, drop = FALSE]
