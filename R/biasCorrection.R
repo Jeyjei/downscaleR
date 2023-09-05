@@ -755,7 +755,7 @@ biasCorrectionXD <- function(y, x, newdata,
   message("[", Sys.time(), "] Argument precipitation is set as ", precip, ", please ensure that this matches your data.")
 
   # Initialize the output bias-corrected data
-  if (length(y) == 1) {
+  if ((length(y) == 1) | (!return.grid.c)) {
     bc <- rep(y, times = 1)
   } else {
     bc <- rep(y, times = 2)
@@ -923,7 +923,7 @@ biasCorrectionXD <- function(y, x, newdata,
             max.ncores = max.ncores,
             ncores = ncores
           )
-
+          
           # Reshape the matrix back to the original dimensions if needed
           if (!station) {
             mat <- setNames(lapply(names(mat), function(var.i) {
@@ -957,7 +957,7 @@ biasCorrectionXD <- function(y, x, newdata,
       if (is.null(names(winarr.list))) {
         names(winarr.list) <- names(runarr[[1]])
       }
-
+      
       # Fill winarr variable for each list
       for (name.runarr in names(runarr[[1]])) {
         if ((grepl("mhat.c", name.runarr)) & (mbc.method)) { # For MBC methos
@@ -973,7 +973,7 @@ biasCorrectionXD <- function(y, x, newdata,
       gc()
     }
   }
-
+  
   # Obtain names of bc variable
   names.bc <- names(bc)
 
@@ -1061,7 +1061,7 @@ biasCorrectionXD <- function(y, x, newdata,
 #' @param p A vector containing the simulated climate by the model for the training period.
 #' @param s A vector containing the simulated climate for the variable used in \code{p}, but considering the test period.
 #' @param method method applied. Current accepted values are \code{"eqm"}, \code{"delta"},
-#'  \code{"scaling"}, \code{"pqm"} , \code{"gpqm"}, \code{"mva"}, \code{"variance"},\code{"loci"} and \code{"ptr"}. See details in
+#'  \code{"scaling"}, \code{"pqm"} , \code{"gpqm"}, \code{"mva"}, \code{"variance"}, \code{"loci"}, \code{"ptr"}, \code{"mbcr"}, \code{"mbcp"} and \code{"mbcn"}. See details in
 #'  function \code{\link{biasCorrection}}.
 #' @param scaling.type Character indicating the type of the scaling method. Options are \code{"additive"}
 #' or \code{"multiplicative"} (see details). This argument is ignored if \code{"scaling"} is not
@@ -1087,7 +1087,7 @@ biasCorrectionXD <- function(y, x, newdata,
 #' @param detrend logical. Detrend data prior to bias correction? Only for \code{"dqm"}. Default. TRUE.
 #' @param isimip3.args Named list of arguments passed to function \code{\link{isimip3}}.
 #' @param mbc.args Named list of arguments passed to function \code{\link{mbc_methods}}.
-#' @param isimip3.args If \code{TRUE}, the corrected input grid (training period, \code{x}) is also returned.
+#' @param return.grid.c If \code{TRUE}, the corrected input grid (training period, \code{x}) is also returned.
 #' If \code{FALSE}, it is not returned. By default, \code{FALSE}.  Only for \code{"mbcr"}, \code{"mbcp"}, \code{"mbcn"} method.
 #' @template templateParallelParams
 #'
@@ -2031,7 +2031,7 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, n.quantile = NULL
     if (!is.null(n.quantile)) {
       mbc.args[["n.tau"]] <- n.quantile
     }
-
+    
     # Apply the multivariabe bias correction method
     if (method == "mbcr") {
       mbc_out <- do.call(mbc_r, list(o = o, p = p, s = s, mbc.args = mbc.args))
@@ -2063,7 +2063,7 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, n.quantile = NULL
 #' @param s A vector containing the simulated climate for the variable used in \code{p}, but considering the test period.
 #' @param mbc.args Named list of arguments passed to function \code{\link{mbc_methods}}.
 #' @details MBCr method developed by A. Canon, from \url{https://github.com/pacificclimate/ClimDown}, \url{https://cran.r-project.org/web/packages/ClimDown/}.
-#' @keywords internal
+# #' @keywords internal
 #' @references
 #'
 #' \itemize{
@@ -2075,8 +2075,6 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, n.quantile = NULL
 #' @importFrom MBC MBCr
 #' @author A. Cannon (acannon@@uvic.ca), JJ. Velasco
 
-
-
 mbc_r <- function(o, p, s, mbc.args) {
   
   # List join
@@ -2084,7 +2082,7 @@ mbc_r <- function(o, p, s, mbc.args) {
   arg.list <- append(arg.list, mbc.args)
 
   # Call MBCr function of MBC library
-  yout <- do.call(MBCr, arg.list)
+  yout <- do.call(MBCr_MBC, arg.list)
 
   return(yout)
 }
@@ -2115,7 +2113,7 @@ mbc_p <- function(o, p, s, mbc.args) {
   arg.list <- append(arg.list, mbc.args)
 
   # Call MBCp function of MBC library
-  yout <- do.call(MBCp, arg.list)
+  yout <- do.call(MBCp_MBC, arg.list)
 
   return(yout)
 }
@@ -2133,13 +2131,32 @@ mbc_p <- function(o, p, s, mbc.args) {
 #' @author A. Cannon (acannon@@uvic.ca), JJ. Velasco
 
 mbc_n <- function(o, p, s, mbc.args) {
+  
+  browser()
+  
+  # Identifie NAs
+  row_na_o <- apply(o, 1, function(x) any(is.na(x)))
+  row_na_p <- apply(p, 1, function(x) any(is.na(x)))
+  row_na_s <- apply(s, 1, function(x) any(is.na(x)))
+  
+  # Extract NAs
+  o_no_na <- o[complete.cases(o), ]
+  p_no_na <- p[complete.cases(p), ]
+  s_no_na <- s[complete.cases(s), ]
+  
   # List join
-  arg.list <- list(o.c = o, m.c = p, m.p = s)
+  arg.list <- list(o.c = o_no_na, m.c = p_no_na, m.p = s_no_na)
   arg.list <- append(arg.list, mbc.args)
   
   # Call MBCn function of MBC library
-  yout <- do.call(MBCn, arg.list)
-
+  yout.aux <- do.call(MBCn_MBC, arg.list)
+  
+  y <- list()
+  p[!row_na_p] <- yout.aux[['mhat.c']]
+  yout[['mhat.c']] <- p
+  s[!row_na_p] <- yout.aux[['mhat.p']]
+  yout[['mhat.p']] <- s
+   
   return(yout)
 }
 

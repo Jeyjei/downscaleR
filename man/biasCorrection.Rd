@@ -9,7 +9,7 @@ biasCorrection(
   x,
   newdata = NULL,
   precipitation = FALSE,
-  method = c("delta", "scaling", "eqm", "pqm", "gpqm", "loci", "dqm", "qdm", "isimip3"),
+  method = c("delta", "scaling", "eqm", "pqm", "gpqm", "loci", "dqm", "qdm", "isimip3", "mbcr", "mbcp", "mbcn"),
   cross.val = c("none", "loo", "kfold"),
   folds = NULL,
   consecutive = TRUE,
@@ -22,6 +22,8 @@ biasCorrection(
   theta = c(0.95, 0.05),
   detrend = TRUE,
   isimip3.args = NULL,
+  mbc.args = list(),
+  return.grid.c = FALSE,
   join.members = FALSE,
   return.raw = FALSE,
   interpGrid.args = list(),
@@ -48,7 +50,7 @@ parameter \code{wet.threshold} is used (see below).}
 
 \item{method}{method applied. Current accepted values are \code{"eqm"}, \code{"delta"},
 \code{"scaling"}, \code{"pqm"} and \code{"gpqm"} \code{"variance"},\code{"loci"}, \code{"ptr"}, 
-\code{"dqm"}, \code{"qdm"}, \code{"isimip3"}. See details.}
+\code{"dqm"}, \code{"qdm"}, \code{"isimip3"}, \code{"mbcr"}, \code{"mbcp"}, \code{"mbcn"}. See details.}
 
 \item{cross.val}{Logical (default to FALSE). Should cross-validation be performed? methods available are 
 leave-one-out ("loo") and k-fold ("kfold") on an annual basis. The default option ("none") does not 
@@ -93,6 +95,11 @@ percentile (and 5th percentile for the left tail). Only for \code{"gpqm"} method
 
 \item{isimip3.args}{Named list of arguments passed to function \code{\link{isimip3}}.}
 
+\item{mbc.args}{Named list of arguments passed to function \code{\link{mbc_methods}}.}
+
+\item{return.grid.c}{Logical. If \code{TRUE}, the corrected input grid (training period, \code{x}) is also returned. 
+If \code{FALSE}, it is not returned. By default, \code{FALSE}.  Only for \code{"mbcr"}, \code{"mbcp"}, \code{"mbcn"} method.}
+
 \item{join.members}{Logical indicating whether members should be corrected independently (\code{FALSE}, the default),
 or joined before performing the correction (\code{TRUE}). It applies to multimember grids only (otherwise ignored).}
 
@@ -119,7 +126,8 @@ Implementation of several standard bias correction methods
 The methods available are \code{"eqm"}, \code{"delta"}, 
 \code{"scaling"}, \code{"pqm"}, \code{"gpqm"}, \code{"loci"}, 
 \code{"ptr"}  (the four latter used only for precipitation), 
-\code{"variance"} (only for temperature), \code{"dqm"} and \code{"qdm"}.
+\code{"variance"} (only for temperature), \code{"dqm"}, \code{"qdm"},
+\code{"mbcr"}, \code{"mbcp"} and \code{"mbcn"}.
 
  These are next briefly described: 
  
@@ -204,6 +212,23 @@ It allows relative (multiplicative) and additive corrections.
 
 
 \strong{isimip3}
+
+\strong{mbcr}
+
+Multivariate bias correction that matches marginal distributions using QDM
+and the Spearman rank correlation dependence structure following Cannon (2016).
+
+\strong{mbcp}
+
+Multivariate bias correction that matches marginal distributions using QDM
+and the Pearson correlation dependence structure following Cannon (2016).
+
+\strong{mbcn}
+
+Multivariate bias correction that matches the multivariate distribution using
+QDM and the N-dimensional probability density function transform (N-pdft)
+following Cannon (2018).
+
 }
 \section{Note on the bias correction of precipitation}{
 

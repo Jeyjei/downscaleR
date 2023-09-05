@@ -18,6 +18,8 @@ biasCorrection1D(
   theta,
   detrend,
   isimip3.args,
+  mbc.args,
+  return.grid.c,
   parallel = FALSE,
   max.ncores = 16,
   ncores = NULL
@@ -31,8 +33,8 @@ biasCorrection1D(
 \item{s}{A vector containing the simulated climate for the variable used in \code{p}, but considering the test period.}
 
 \item{method}{method applied. Current accepted values are \code{"eqm"}, \code{"delta"},
-\code{"scaling"}, \code{"pqm"} , \code{"gpqm"}, \code{"mva"}, \code{"variance"},\code{"loci"} and \code{"ptr"}. See details in 
-function \code{\link{biasCorrection}}.}
+\code{"scaling"}, \code{"pqm"} , \code{"gpqm"}, \code{"mva"}, \code{"variance"},\code{"loci"}, \code{"ptr"}, 
+\code{"mbcr"}, \code{"mbcp"} and \code{"mbcn"}. See details in function \code{\link{biasCorrection}}.}
 
 \item{scaling.type}{Character indicating the type of the scaling method. Options are \code{"additive"} 
 or \code{"multiplicative"} (see details). This argument is ignored if \code{"scaling"} is not 
@@ -63,6 +65,11 @@ Values below this threshold are fitted to a gamma (normal) distribution. By defa
 percentile (5th percentile for the left tail). Only for \code{"gpqm"} method.}
 
 \item{detrend}{logical. Detrend data prior to bias correction? Only for \code{"dqm"}. Default. TRUE.}
+
+\item{mbc.args}{Named list of arguments passed to function \code{\link{mbc_methods}}.}
+
+\item{return.grid.c}{Logical. If \code{TRUE}, the corrected input grid (training period, \code{x}) is also returned. 
+If \code{FALSE}, it is not returned. By default, \code{FALSE}.  Only for \code{"mbcr"}, \code{"mbcp"}, \code{"mbcn"} method.}
 
 \item{parallel}{Logical. Should parallel execution be used?}
 
