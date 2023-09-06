@@ -2040,7 +2040,7 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, n.quantile = NULL
     } else if (method == "mbcn") {
       mbc_out <- do.call(mbc_n, list(o = o, p = p, s = s, mbc.args = mbc.args))
     }
-
+    
     # Reshape the result
     yout <- list()
     names.var <- suppressWarnings(colnames(o))
@@ -2077,12 +2077,28 @@ mbc_methods <- function(o, p, s, method, precip, pr.threshold, n.quantile = NULL
 
 mbc_r <- function(o, p, s, mbc.args) {
   
-  # List join
-  arg.list <- list(o.c = o, m.c = p, m.p = s)
-  arg.list <- append(arg.list, mbc.args)
+  # Identifiy NAs
+  row_na_o <- apply(o, 1, function(x) any(is.na(x)))
+  row_na_p <- apply(p, 1, function(x) any(is.na(x)))
+  row_na_s <- apply(s, 1, function(x) any(is.na(x)))
+  
+  # Extract NAs
+  arg.list <- list(o.c = o[complete.cases(o), ], 
+                   m.c = p[complete.cases(p), ], 
+                   m.p = s[complete.cases(s), ])
 
+  # List join
+  arg.list <- append(arg.list, mbc.args)
+  
   # Call MBCr function of MBC library
-  yout <- do.call(MBCr_MBC, arg.list)
+  yout.aux <- do.call(MBCr, arg.list)
+  
+  # Put NAs in the same place
+  yout <- list()
+  p[!row_na_p] <- yout.aux[['mhat.c']]
+  yout[['mhat.c']] <- p
+  s[!row_na_s] <- yout.aux[['mhat.p']]
+  yout[['mhat.p']] <- s
 
   return(yout)
 }
@@ -2107,13 +2123,29 @@ mbc_r <- function(o, p, s, mbc.args) {
 #' @author A. Cannon (acannon@@uvic.ca), JJ. Velasco
 
 mbc_p <- function(o, p, s, mbc.args) {
+  
+  # Identifiy NAs
+  row_na_o <- apply(o, 1, function(x) any(is.na(x)))
+  row_na_p <- apply(p, 1, function(x) any(is.na(x)))
+  row_na_s <- apply(s, 1, function(x) any(is.na(x)))
+  
+  # Extract NAs
+  arg.list <- list(o.c = o[complete.cases(o), ], 
+                   m.c = p[complete.cases(p), ], 
+                   m.p = s[complete.cases(s), ])
 
   # List join
-  arg.list <- list(o.c = o, m.c = p, m.p = s)
   arg.list <- append(arg.list, mbc.args)
-
+  
   # Call MBCp function of MBC library
-  yout <- do.call(MBCp_MBC, arg.list)
+  yout.aux <- do.call(MBCp, arg.list)
+  
+  # Put NAs in the same place
+  yout <- list()
+  p[!row_na_p] <- yout.aux[['mhat.c']]
+  yout[['mhat.c']] <- p
+  s[!row_na_s] <- yout.aux[['mhat.p']]
+  yout[['mhat.p']] <- s
 
   return(yout)
 }
@@ -2132,29 +2164,27 @@ mbc_p <- function(o, p, s, mbc.args) {
 
 mbc_n <- function(o, p, s, mbc.args) {
   
-  browser()
-  
-  # Identifie NAs
+  # Identifiy NAs
   row_na_o <- apply(o, 1, function(x) any(is.na(x)))
   row_na_p <- apply(p, 1, function(x) any(is.na(x)))
   row_na_s <- apply(s, 1, function(x) any(is.na(x)))
   
   # Extract NAs
-  o_no_na <- o[complete.cases(o), ]
-  p_no_na <- p[complete.cases(p), ]
-  s_no_na <- s[complete.cases(s), ]
-  
+  arg.list <- list(o.c = o[complete.cases(o), ], 
+                   m.c = p[complete.cases(p), ], 
+                   m.p = s[complete.cases(s), ])
+                   
   # List join
-  arg.list <- list(o.c = o_no_na, m.c = p_no_na, m.p = s_no_na)
   arg.list <- append(arg.list, mbc.args)
   
   # Call MBCn function of MBC library
-  yout.aux <- do.call(MBCn_MBC, arg.list)
+  yout.aux <- do.call(MBCn, arg.list)
   
-  y <- list()
+  # Put NAs in the same place
+  yout <- list()
   p[!row_na_p] <- yout.aux[['mhat.c']]
   yout[['mhat.c']] <- p
-  s[!row_na_p] <- yout.aux[['mhat.p']]
+  s[!row_na_s] <- yout.aux[['mhat.p']]
   yout[['mhat.p']] <- s
    
   return(yout)
