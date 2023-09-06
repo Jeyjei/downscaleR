@@ -360,7 +360,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
                            max.ncores = 16,
                            ncores = NULL) {
 
-
+  
   # Check if 'gqm' method is used and raise an error suggesting the use of 'pqm' instead
   if (method == "gqm") stop("'gqm' is not a valid choice anymore. Use method = 'pqm' instead and set fitdistr.args = list(densfun = 'gamma')")
 
@@ -485,7 +485,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
 
   # Extract seasonal information of the target variable
   seas <- lapply(y, function(k) getSeason(k)) # getSeason(y[[1]])
-
+  
   # Fill missing values in the target and predictor variables. Necessary transformeR >= v2.1.4
   y <- lapply(y, function(k) fillGrid(grid = k, lonLim = NULL, latLim = NULL))
   x <- lapply(x, function(k) fillGrid(grid = k, lonLim = NULL, latLim = NULL))
@@ -495,8 +495,16 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
   yx <- mapply(function(y_f, x_f) intersectGrid(y_f, x_f, type = "temporal", which.return = 1:2), y, x, SIMPLIFY = FALSE, USE.NAMES = TRUE)
   y <- lapply(yx, function(k) k[[1]])
   x <- lapply(yx, function(k) k[[2]])
-
-
+  
+  # In future lines, use subsetGrid(..., years = ...) that used getYearsAsINDEX(). 
+  # This functions returns NAs if attr(grid$Dates, 'season') is not sort.
+  y <- lapply(y, function(k) {
+    attr(k$Dates, 'season') <- sort(attr(k$Dates, 'season'))
+    return(k)})
+  x <- lapply(x, function(k) {
+    attr(k$Dates, 'season') <- sort(attr(k$Dates, 'season'))
+    return(k)})
+  
   # Perform bias correction based on the cross-validation type
   if (cross.val == "none") {
     # No cross-validation
@@ -530,7 +538,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
     })
   }
   else {
-
+    
     # Cross-validation
     if (nwdatamssg) {
       message("'newdata' will be ignored for cross-validation")
@@ -559,6 +567,7 @@ biasCorrection <- function(y, x, newdata = NULL, precipitation = FALSE,
 
     # Perform bias correction for each fold
     output.list <- lapply(1:length(years), function(i) {
+      
       target.year <- years[[i]]
       rest.years <- setdiff(unlist(years), target.year)
       station <- FALSE
